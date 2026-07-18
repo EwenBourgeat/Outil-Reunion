@@ -11,6 +11,7 @@ Lancement (via lancer.bat) :
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -19,10 +20,11 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from PIL import Image
 
+import auth
 import cr_engine
 
 # --- Chemins de travail (relatifs au dossier du projet) --------------------
@@ -31,6 +33,7 @@ TEMPLATE = RACINE / "template" / "DIAG_MODEL_SDC.docx"
 DATA = RACINE / "data" / "chantiers.json"
 SORTIE = RACINE / "sortie"
 WEB = RACINE / "web" / "index.html"
+LOGIN = RACINE / "web" / "login.html"
 PROMPT = RACINE / "prompt_diagnostic.md"
 
 LARGEUR_MAX_PX = 1600          # compression : largeur max des photos
@@ -61,6 +64,45 @@ app = FastAPI(title="Compte rendu de diagnostic")
 # Le modèle de transcription est lourd à charger : on le garde en mémoire
 # entre deux appels (chargé paresseusement au premier /api/transcrire).
 _whisper = None
+
+
+# ---------------------------------------------------------------------------
+# Authentification : garde d'accès sur toute l'application
+# ---------------------------------------------------------------------------
+# Seules la page de connexion et ses deux routes sont accessibles sans session.
+CHEMINS_PUBLICS = {"/login", "/api/login", "/api/logout"}
+
+
+@app.middleware("http")
+async def garde_authentification(request: Request, call_next):
+    chemin = request.url.path
+    if chemin in CHEMINS_PUBLICS or auth.jeton_valide(request.cookies.get(auth.COOKIE)):
+        return await call_next(request)
+    if chemin.startswith("/api/"):
+        return JSONResponse({"detail": "Session expirée. Reconnectez-vous."}, status_code=401)
+    return RedirectResponse("/login", status_code=303)
+
+
+@app.get("/login")
+def page_login() -> FileResponse:
+    return FileResponse(LOGIN)
+
+
+@app.post("/api/login")
+async def connexion(request: Request, email: str = Form(...), mdp: str = Form(...)) -> JSONResponse:
+    if not auth.verifier_identifiants(email, mdp):
+        await asyncio.sleep(0.5)          # ralentit les tentatives par force brute
+        raise HTTPException(401, "E-mail ou mot de passe incorrect.")
+    rep = JSONResponse({"ok": True})
+    auth.poser_cookie(rep, secure=(request.url.scheme == "https"))
+    return rep
+
+
+@app.post("/api/logout")
+async def deconnexion() -> JSONResponse:
+    rep = JSONResponse({"ok": True})
+    auth.retirer_cookie(rep)
+    return rep
 
 
 # ---------------------------------------------------------------------------

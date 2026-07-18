@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F7FB">
+<title>Connexion — Compte rendu de diagnostic</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script>
+  tailwind.config = { theme: { extend: {
+    colors: {
+      paper:"#F4F7FB", surface:"#FFFFFF", ink:"#0E243D", muted:"#566B80", faint:"#93A6B8",
+      line:"#DBE6F1", "line-2":"#C6D5E6", accent:"#1B5CAB", "accent-ink":"#154A8C",
+      "accent-soft":"#E6EFFB", urgent:"#C0342B",
+    },
+    fontFamily: {
+      display:['"Space Grotesk"',"system-ui","sans-serif"],
+      mono:['"IBM Plex Mono"',"ui-monospace","monospace"],
+      sans:['"Inter"',"system-ui","sans-serif"],
+    },
+  }}};
+</script>
+
+<style>
+  :root { color-scheme: light; }
+  html { font-size:16px; -webkit-text-size-adjust:100%; }
+  body{
+    background:#F4F7FB; color:#0E243D;
+    font-family:"Inter",system-ui,sans-serif; -webkit-font-smoothing:antialiased;
+  }
+  input, button { min-height:44px; }
+  input { font-size:16px; }
+  .kicker{ font-family:"IBM Plex Mono",ui-monospace,monospace; font-weight:500;
+    letter-spacing:.14em; text-transform:uppercase; font-size:11px; }
+  .champ{ background:#fff; border:1px solid #C6D5E6; border-radius:9px; padding:0 14px;
+    color:#0E243D; transition:border-color .16s, box-shadow .16s; }
+  .champ:focus{ outline:none; border-color:#1B5CAB; box-shadow:0 0 0 3px rgba(27,92,171,.16); }
+  .btn{ background:#1B5CAB; color:#fff; border-radius:10px; font-weight:600;
+    transition:filter .16s, transform .06s; box-shadow:0 1px 2px rgba(21,74,140,.35); }
+  .btn:hover:not(:disabled){ filter:brightness(1.06); }
+  .btn:active:not(:disabled){ transform:translateY(1px); }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+  /* Halo bleu doux en fond : moderne et sobre, sans motif. */
+  body::before{ content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:
+      radial-gradient(760px 460px at 50% -12%, rgba(27,92,171,.12), transparent 62%),
+      radial-gradient(620px 460px at 100% 112%, rgba(14,36,61,.06), transparent 58%); }
+  @media (prefers-reduced-motion: reduce){ * { transition-duration:.01ms !important; } }
+</style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center p-5">
+
+  <main class="w-full max-w-sm">
+    <div class="flex flex-col items-center text-center mb-7">
+      <div class="w-11 h-11 rounded-xl bg-ink text-paper flex items-center justify-center mb-3">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01"/><path d="M9 12v.01"/><path d="M9 15v.01"/></svg>
+      </div>
+      <div class="kicker text-accent">GO Architecture · Copropriété</div>
+      <h1 class="font-display text-[22px] font-semibold mt-1">Compte rendu de diagnostic</h1>
+      <p class="text-[13.5px] text-muted mt-1">Connectez-vous pour accéder à l'outil.</p>
+    </div>
+
+    <div class="bg-surface border border-line rounded-2xl p-6 shadow-[0_1px_3px_rgba(14,36,61,.05)]">
+      <div id="erreur" class="hidden mb-4 rounded-lg border border-urgent/25 bg-[#FBEDEC] text-urgent px-3.5 py-2.5 text-[13.5px] leading-snug"></div>
+
+      <form id="form-login" novalidate>
+        <label class="block kicker text-muted mb-1.5" for="email">Adresse e-mail</label>
+        <input id="email" type="email" autocomplete="username" required
+          class="champ w-full h-12 mb-4" placeholder="vous@exemple.com">
+
+        <label class="block kicker text-muted mb-1.5" for="mdp">Mot de passe</label>
+        <input id="mdp" type="password" autocomplete="current-password" required
+          class="champ w-full h-12 mb-5" placeholder="••••••••">
+
+        <button id="btn-login" type="submit" class="btn w-full h-12 text-[15px] flex items-center justify-center gap-2">
+          <span id="btn-txt">Se connecter</span>
+          <svg id="btn-spin" class="w-4 h-4 hidden animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        </button>
+      </form>
+    </div>
+  </main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function afficherErreur(msg){
+  const e = $("erreur");
+  e.textContent = msg;
+  e.classList.remove("hidden");
+}
+
+$("form-login").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("erreur").classList.add("hidden");
+  const email = $("email").value.trim();
+  const mdp = $("mdp").value;
+  if (!email || !mdp){ afficherErreur("Renseignez votre e-mail et votre mot de passe."); return; }
+
+  $("btn-login").disabled = true;
+  $("btn-txt").textContent = "Connexion…";
+  $("btn-spin").classList.remove("hidden");
+
+  const fd = new FormData();
+  fd.append("email", email);
+  fd.append("mdp", mdp);
+  try {
+    const r = await fetch("/api/login", { method:"POST", body: fd });
+    if (r.ok){ window.location.href = "/"; return; }
+    const d = await r.json().catch(() => ({}));
+    afficherErreur(d.detail || "Connexion impossible.");
+  } catch(_) {
+    afficherErreur("Le serveur ne répond pas. Vérifiez qu'il est bien démarré.");
+  } finally {
+    $("btn-login").disabled = false;
+    $("btn-txt").textContent = "Se connecter";
+    $("btn-spin").classList.add("hidden");
+  }
+});
+
+$("email").focus();
+</script>
+</body>
+</html>

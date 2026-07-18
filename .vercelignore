@@ -1,0 +1,21 @@
+# Fichiers hors périmètre du déploiement Next.js (l'app locale d'origine reste sur `main`).
+# N'affecte PAS le build : rien ici n'est importé par l'app Next.js.
+app.py
+auth.py
+cr_engine.py
+run.py
+lancer.bat
+lancer.command
+INSTALLATION.md
+PROMPT_CLAUDE_CODE.md
+config.txt.example
+README.md
+web/
+template/
+photos/
+sortie/
+exemples/
+demo/
+data/chantiers.json
+.claude/
+.venv/

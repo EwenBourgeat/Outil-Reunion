@@ -1,0 +1,254 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===================================================================
+   Identité « bleu de plan » — portée depuis l'app locale d'origine.
+   =================================================================== */
+:root {
+  color-scheme: light;
+}
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background: #f4f7fb;
+  color: #0e243d;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Halo bleu doux en fond (pas de motif). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 100% -12%, rgba(27, 92, 171, 0.055), transparent 60%),
+    radial-gradient(760px 480px at -10% 112%, rgba(14, 36, 61, 0.045), transparent 58%);
+}
+
+button,
+select,
+input,
+textarea {
+  min-height: 44px;
+}
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+@layer components {
+  .kicker {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .card {
+    background: #ffffff;
+    border: 1px solid #dbe6f1;
+    border-radius: 12px;
+    box-shadow: 0 1px 0 rgba(14, 36, 61, 0.02), 0 1px 3px rgba(14, 36, 61, 0.04);
+  }
+  .champ {
+    background: #ffffff;
+    border: 1px solid #c6d5e6;
+    border-radius: 9px;
+    padding: 0 14px;
+    color: #0e243d;
+    transition: border-color 0.16s, box-shadow 0.16s;
+  }
+  .champ:focus {
+    outline: none;
+    border-color: #1b5cab;
+    box-shadow: 0 0 0 3px rgba(27, 92, 171, 0.16);
+  }
+  .btn-primaire {
+    background: #1b5cab;
+    color: #fff;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: filter 0.16s, transform 0.06s, box-shadow 0.16s;
+    box-shadow: 0 1px 2px rgba(21, 74, 140, 0.35);
+  }
+  .btn-primaire:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  .btn-primaire:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .btn-primaire:disabled {
+    background: #b9cbe0;
+    color: #fff;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+  .btn-fant {
+    background: #fff;
+    border: 1px solid #c6d5e6;
+    border-radius: 9px;
+    color: #33475c;
+    font-weight: 500;
+    transition: border-color 0.16s, color 0.16s, background 0.16s;
+  }
+  .btn-fant:hover {
+    border-color: #1b5cab;
+    color: #154a8c;
+    background: #f0f5fc;
+  }
+  .depot {
+    border: 1.5px dashed #c6d5e6;
+    border-radius: 11px;
+    background: #f8fbfe;
+    transition: border-color 0.16s, background 0.16s;
+  }
+  .depot:hover {
+    border-color: #1b5cab;
+    background: #eff5fd;
+  }
+  .depot--survol {
+    border-color: #1b5cab;
+    background: #e3eefb;
+  }
+  .select-wrap {
+    position: relative;
+  }
+  .select-wrap select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 40px;
+  }
+  .select-wrap::after {
+    content: "";
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    transform: translateY(-65%) rotate(45deg);
+    border-right: 2px solid #566b80;
+    border-bottom: 2px solid #566b80;
+    pointer-events: none;
+  }
+  .rec-btn {
+    width: 92px;
+    height: 92px;
+    border-radius: 9999px;
+    background: #1b5cab;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 0.16s, transform 0.06s;
+    box-shadow: 0 2px 12px rgba(21, 74, 140, 0.28);
+  }
+  .rec-btn:hover {
+    filter: brightness(1.06);
+  }
+  .rec-btn:active {
+    transform: scale(0.97);
+  }
+  .rec-btn.enreg {
+    background: #c0342b;
+    box-shadow: 0 2px 12px rgba(192, 52, 43, 0.3);
+  }
+  .photo-carte {
+    background: #fff;
+    border: 1px solid #dbe6f1;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.16s, box-shadow 0.16s;
+  }
+  .photo-carte:hover {
+    border-color: #1b5cab;
+    box-shadow: 0 2px 8px rgba(14, 36, 61, 0.06);
+  }
+  .chk {
+    width: 22px;
+    height: 22px;
+    accent-color: #1b5cab;
+    cursor: pointer;
+  }
+  .barre-action {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    background: rgba(244, 247, 251, 0.86);
+    backdrop-filter: saturate(140%) blur(8px);
+    -webkit-backdrop-filter: saturate(140%) blur(8px);
+    border-top: 1px solid #dbe6f1;
+  }
+  .modale-fond {
+    background: rgba(14, 36, 61, 0.46);
+  }
+}
+
+.pulse-rec {
+  animation: pulse-rec 1.5s ease-out infinite;
+}
+@keyframes pulse-rec {
+  0% {
+    box-shadow: 0 0 0 0 rgba(192, 52, 43, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(192, 52, 43, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(192, 52, 43, 0);
+  }
+}
+.onde {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  gap: 3px;
+}
+.onde span {
+  display: inline-block;
+  width: 3.5px;
+  height: 8px;
+  border-radius: 2px;
+  background: #c0342b;
+  animation: onde 1s ease-in-out infinite;
+}
+.onde span:nth-child(odd) {
+  animation-delay: 0.18s;
+}
+.onde span:nth-child(3n) {
+  animation-delay: 0.34s;
+}
+@keyframes onde {
+  0%,
+  100% {
+    height: 8px;
+  }
+  50% {
+    height: 30px;
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onde span,
+  .pulse-rec,
+  .spin {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
