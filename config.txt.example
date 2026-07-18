@@ -1,0 +1,17 @@
+# ---------------------------------------------------------------------------
+#  CONFIGURATION DE L'OUTIL DE COMPTE RENDU  (modele)
+# ---------------------------------------------------------------------------
+#
+#  Ce fichier est un MODELE. Au premier lancement, "lancer.bat" en cree une
+#  copie nommee  config.txt  (le seul fichier que vous modifiez).
+#
+#  Collez votre cle Claude dans config.txt, juste apres le signe = (sans espace).
+#  Elle commence par  sk-ant-...
+#  Vous la trouvez sur  https://console.anthropic.com/  (rubrique API Keys).
+#
+#  Ne partagez cette cle avec personne : c'est comme un mot de passe.
+#  (config.txt n'est jamais envoye sur GitHub : il est dans le .gitignore.)
+#
+# ---------------------------------------------------------------------------
+
+ANTHROPIC_API_KEY=

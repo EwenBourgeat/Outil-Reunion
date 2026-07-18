@@ -1,0 +1,21 @@
+# --- Secrets : la cle Claude ne doit JAMAIS partir sur GitHub -------------
+config.txt
+
+# --- Environnement Python -------------------------------------------------
+.venv/
+__pycache__/
+*.pyc
+
+# --- Sorties generees (comptes rendus) et photos de travail ---------------
+sortie/*
+!sortie/.gitkeep
+photos/*
+!photos/.gitkeep
+
+# --- Modeles de transcription telecharges (lourds, regeneres a la volee) --
+*.bin
+models/
+
+# --- Systeme --------------------------------------------------------------
+.DS_Store
+Thumbs.db

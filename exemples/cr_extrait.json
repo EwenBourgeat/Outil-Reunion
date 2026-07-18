@@ -1,0 +1,79 @@
+{
+  "generalites": [
+    "La présente visite de diagnostic a été effectuée le 11 mars 2026 à la demande du syndic SYNDIC EXEMPLE, en vue d'identifier les pathologies affectant l'immeuble et de hiérarchiser les interventions à envisager. Elle a été conduite en présence de M. Martin, gestionnaire, et de Mme Durand, présidente du conseil syndical. M. Petit, membre du conseil syndical, était excusé.",
+    "L'immeuble est un immeuble de rapport de la fin du XIXe siècle, élevé de R+5 sur combles. Sa structure est constituée de murs en pierre de taille et moellons, de planchers bois, et d'une couverture en zinc. Le nombre de lots, annoncé aux environs de trente, reste à confirmer auprès du syndic.",
+    "La visite s'est déroulée par temps sec et couvert. Elle a porté sur les façades sur rue et sur cour, la cage d'escalier et les paliers, ainsi que sur les caves. La couverture n'a pas pu être visitée : elle n'a été observée que depuis la cour, sans accès direct. Les parties privatives n'ont pas été visitées. Les constats ci-après sont donc établis sous réserve des parties non accessibles au jour de la visite."
+  ],
+  "observations": [
+    {
+      "titre": "1. FAÇADE SUR COUR",
+      "constat": "La façade sur cour présente une fissuration nette et récurrente, principalement localisée en allèges des niveaux R+2 à R+4. L'enduit sonne creux en plusieurs points au sondage au marteau. Au droit du passage d'entrée de la cour, des fragments d'enduit sont en cours de décollement et menacent de se détacher.",
+      "analyse": "L'origine la plus probable est une perte d'adhérence de l'enduit sur son support, favorisée par les infiltrations d'eau de pluie dans les fissures et par les cycles de gel-dégel. Le caractère structurel ou non de la fissuration des allèges ne peut être écarté en l'état et devra être confirmé par sondages.",
+      "preconisation": "Mise en sécurité immédiate du passage d'entrée de la cour : purge des éléments instables et mise en place d'un filet de protection ou d'un périmètre de sécurité, dans l'attente des travaux. Il conviendra ensuite de faire réaliser un diagnostic de façade approfondi (sondages, relevé de fissuration) préalable à un ravalement avec reprise des enduits.",
+      "priorite": "URGENT",
+      "photos_liees": [1, 2]
+    },
+    {
+      "titre": "2. PARTIES COMMUNES INTÉRIEURES — GARDE-CORPS DE LA CAGE D'ESCALIER",
+      "constat": "Le garde-corps de la cage d'escalier au niveau R+2 présente un défaut de fixation manifeste : il se déforme sous une sollicitation manuelle normale. Sa hauteur, inférieure à 0,90 m, est par ailleurs non conforme aux exigences actuelles.",
+      "analyse": "Le descellement des scellements en maçonnerie est l'hypothèse la plus probable. Le risque de chute de personne est caractérisé.",
+      "preconisation": "Reprise immédiate des scellements et sécurisation provisoire du garde-corps. La mise en conformité de la hauteur (1,00 m) devra être étudiée pour l'ensemble de la cage d'escalier, dans le respect du caractère patrimonial de l'ouvrage.",
+      "priorite": "URGENT",
+      "photos_liees": [3]
+    },
+    {
+      "titre": "3. COUVERTURE, ZINGUERIE ET INFILTRATIONS",
+      "constat": "Le palier du dernier étage présente des traces d'infiltration : le plafond est taché et l'auréole témoigne d'un désordre actif ou récent. La couverture n'a pas été accessible lors de la visite et n'a pu être observée que depuis la cour.",
+      "analyse": "Sous réserve d'une inspection rapprochée, l'origine la plus probable se situe au niveau d'une souche de cheminée ou d'un solin en zinc défaillant. Aucune conclusion ne peut être arrêtée sans accès à la couverture.",
+      "preconisation": "Faire procéder à une inspection de la couverture par une entreprise de couverture-zinguerie, avec moyen d'accès adapté (nacelle ou cordiste), afin d'identifier précisément le point d'entrée d'eau et d'établir un devis de reprise.",
+      "priorite": "COURT TERME",
+      "photos_liees": [4]
+    },
+    {
+      "titre": "4. FAÇADE SUR RUE",
+      "constat": "La façade sur rue est dans un état d'ensemble satisfaisant. Elle présente des salissures d'encrassement urbain ainsi que quelques épaufrures ponctuelles sur les bandeaux.",
+      "analyse": "Ces désordres relèvent du vieillissement normal des parements et ne présentent pas de caractère évolutif à ce stade. La date du dernier ravalement, annoncée à une dizaine d'années, n'a pu être confirmée en visite.",
+      "preconisation": "Aucune intervention urgente. Un nettoyage et une reprise ponctuelle des bandeaux seront à intégrer au plan pluriannuel de travaux, avec l'opportunité d'une mutualisation avec le ravalement de la façade sur cour.",
+      "priorite": "MOYEN TERME",
+      "photos_liees": []
+    },
+    {
+      "titre": "5. SOUS-SOL ET CAVES",
+      "constat": "Les caves présentent des efflorescences de salpêtre en pied de murs, sur une hauteur limitée.",
+      "analyse": "Le phénomène est caractéristique de remontées d'humidité par capillarité, courantes sur ce type de maçonnerie ancienne dépourvue de coupure de capillarité. Aucun désordre structurel n'a été relevé.",
+      "preconisation": "Pas d'intervention urgente. Améliorer la ventilation des caves et proscrire tout revêtement étanche sur les maçonneries. Un traitement pourra être étudié dans le cadre du plan pluriannuel de travaux.",
+      "priorite": "MOYEN TERME",
+      "photos_liees": []
+    },
+    {
+      "titre": "6. MENUISERIES ET ÉQUIPEMENTS ÉNERGÉTIQUES",
+      "constat": "Les menuiseries des parties communes sont en bois, à simple vitrage, en mauvais état général et présentant des défauts d'étanchéité à la fermeture. Aucune isolation thermique n'a été relevée sur l'enveloppe. La chaudière collective au gaz paraît ancienne ; aucun DPE collectif à jour n'a été présenté lors de la visite.",
+      "analyse": "L'ensemble traduit une performance énergétique dégradée, cohérente avec le bâti d'origine non rénové. L'état de la chaudière n'a pas pu être expertisé au cours de la visite.",
+      "preconisation": "Faire relever les caractéristiques de la chaudière collective (année, rendement, contrat d'entretien) et engager la réalisation du DPE collectif ainsi que de l'audit énergétique réglementaire, préalables indispensables à toute décision de travaux.",
+      "priorite": "COURT TERME",
+      "photos_liees": []
+    }
+  ],
+  "conclusion": {
+    "synthese": [
+      "Deux désordres relèvent d'une mise en sécurité immédiate et ne peuvent attendre la prochaine assemblée générale : le décollement d'enduit au droit du passage d'entrée de la cour, qui présente un risque de chute de matériaux sur les personnes, et l'instabilité du garde-corps du R+2. Nous recommandons au syndic de faire intervenir sans délai une entreprise pour purge et protection, au titre des mesures conservatoires.",
+      "Les autres désordres — infiltrations en couverture, fissuration des allèges sur cour, humidité des caves, vétusté des menuiseries — ne présentent pas de caractère de péril mais appellent des investigations complémentaires et une programmation cohérente. Nous recommandons d'engager l'élaboration d'un plan pluriannuel de travaux (PPT) permettant de hiérarchiser et d'étaler ces interventions, et d'étudier la mutualisation du ravalement des deux façades avec les reprises de couverture."
+    ],
+    "energetique": [
+      "L'immeuble ne présente à ce jour aucune isolation thermique et conserve des menuiseries bois à simple vitrage vétustes. Le poste de déperditions le plus significatif est vraisemblablement constitué par l'enveloppe (façades, toiture, menuiseries), auquel s'ajoute une production de chaleur collective ancienne dont le rendement reste à évaluer.",
+      "Nous recommandons de faire réaliser le DPE collectif et l'audit énergétique réglementaire, qui conditionnent l'accès aux dispositifs d'aide. Le ravalement de la façade sur cour, rendu nécessaire par les désordres constatés, constitue une opportunité pour étudier une isolation thermique par l'extérieur sur cette façade, sous réserve de compatibilité réglementaire et patrimoniale. La reprise de la couverture pourra de même intégrer une isolation des combles, généralement le poste au meilleur rapport coût/efficacité. Cette opération d'ensemble est susceptible d'ouvrir droit aux dispositifs MaPrimeRénov' Copropriété et aux Certificats d'Économies d'Énergie, dont l'éligibilité devra être confirmée à l'issue de l'audit."
+    ]
+  },
+  "photos": [
+    { "fichier": "IMG_0412.jpg", "legende": "Façade sur cour — fissuration des allèges" },
+    { "fichier": "IMG_0413.jpg", "legende": "Décollement d'enduit au droit du passage d'entrée" },
+    { "fichier": "IMG_0414.jpg", "legende": "Garde-corps R+2 — descellement" },
+    { "fichier": "IMG_0415.jpg", "legende": "Palier dernier étage — traces d'infiltration" }
+  ],
+  "points_a_completer": [
+    "Nombre de lots (≈ 30) à confirmer auprès du syndic.",
+    "Date du dernier ravalement de la façade sur rue à confirmer.",
+    "Caractéristiques de la chaudière collective (année, rendement) non relevées en visite.",
+    "Existence et date du dernier DPE collectif à vérifier."
+  ]
+}

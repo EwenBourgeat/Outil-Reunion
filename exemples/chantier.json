@@ -1,0 +1,43 @@
+{
+  "sdc": "SDC EXEMPLE",
+  "adresse": "1 RUE DE L'EXEMPLE 75000 PARIS",
+  "code_immeuble": "EXE-00-000",
+  "n_affaire": "2026-041",
+  "moa": "SYNDIC EXEMPLE",
+  "date_visite": "2026-03-11",
+  "phase": "DIAG",
+  "contacts": [
+    {
+      "groupe": "MOA",
+      "organisme": "SYNDIC",
+      "nom": "M. Martin, gestionnaire",
+      "telephone": "01 23 45 67 89",
+      "email": "contact@syndic-exemple.fr",
+      "present": true
+    },
+    {
+      "groupe": "MOA",
+      "organisme": "CS",
+      "nom": "Mme Durand, présidente du conseil syndical",
+      "telephone": "06 12 34 56 01",
+      "email": "president.cs@exemple.fr",
+      "present": true
+    },
+    {
+      "groupe": "MOA",
+      "organisme": "CS",
+      "nom": "M. Petit, membre du conseil syndical",
+      "telephone": "06 12 34 56 02",
+      "email": "membre.cs@exemple.fr",
+      "present": false
+    },
+    {
+      "groupe": "MOE",
+      "organisme": "GO ARCHITECTURE",
+      "nom": "M. de Vallée, architecte DPLG",
+      "telephone": "01 23 45 67 80\n01 23 45 67 81\n06 12 34 56 03",
+      "email": "contact@go-architecture.fr",
+      "present": true
+    }
+  ]
+}
