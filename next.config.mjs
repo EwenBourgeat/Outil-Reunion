@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // /api/generate lit le template Word et le prompt au runtime : on force leur
-  // inclusion dans le bundle de la fonction serverless (vérifié via build standalone).
+  // /api/extract lit le prompt au runtime : on force son inclusion dans le bundle
+  // de la fonction serverless. (Le template Word, lui, est servi en statique depuis
+  // public/ et récupéré par le navigateur qui génère le .docx localement.)
   experimental: {
     outputFileTracingIncludes: {
-      "/api/generate": ["./assets/**", "./prompt_diagnostic.md"],
+      "/api/extract": ["./prompt_diagnostic.md"],
     },
   },
 };

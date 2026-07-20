@@ -13,8 +13,16 @@ interface PhotoUI {
 }
 interface ResultatGen {
   filename: string;
-  docx: string; // base64
+  blobUrl: string; // URL objet du .docx généré dans le navigateur
   points_a_completer: string[];
+}
+
+function dataUrlVersUint8(dataUrl: string): Uint8Array {
+  const b64 = dataUrl.split(",")[1] || "";
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
 }
 
 const CLE_WIP = "cr_diag_wip";
@@ -295,21 +303,44 @@ export default function OutilPage() {
     };
     setProgression({ transcription: "fait", analyse: "cours" });
     try {
-      const r = await fetch("/api/generate", {
+      // 1. Analyse et rédaction (Gemini, côté serveur) — on n'envoie QUE du texte,
+      //    jamais les photos : payload minuscule, aucune limite de taille.
+      const r = await fetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chantier: fiche,
           transcription,
-          photos: photos.map((p) => ({ nom: p.nom, legende: p.legende, dataUrl: p.dataUrl })),
+          photoNames: photos.map((p) => p.nom),
         }),
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || "La génération a échoué.");
+      if (!r.ok) throw new Error(data.detail || "L'analyse a échoué.");
+      const donnees = data.donnees;
+
+      // 2. Mise en page du .docx directement dans le navigateur (photos incluses,
+      //    sans jamais quitter le poste). Le moteur est chargé à la demande.
+      setProgression({ transcription: "fait", analyse: "fait", miseenpage: "cours" });
+      const { genererDocx } = await import("@/lib/docx");
+      const tpl = await fetch("/DIAG_MODEL_SDC.docx");
+      const template = new Uint8Array(await tpl.arrayBuffer());
+      const photosDocx = photos.map((p) => ({ data: dataUrlVersUint8(p.dataUrl), legende: p.legende || "" }));
+      const octets = genererDocx(template, donnees, fiche, photosDocx);
+
+      const slug = fiche.sdc.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+      const dateCompacte = (fiche.date_visite || "").replace(/-/g, "");
+      const blob = new Blob([octets as unknown as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+
       setProgression({ transcription: "fait", analyse: "fait", miseenpage: "fait", pret: "fait" });
       await new Promise((res) => setTimeout(res, 350));
       setProgression(null);
-      setResultat(data as ResultatGen);
+      setResultat({
+        filename: `CR_DIAG_${slug}_${dateCompacte}.docx`,
+        blobUrl: URL.createObjectURL(blob),
+        points_a_completer: donnees.points_a_completer || [],
+      });
     } catch (e) {
       setProgression(null);
       montrerErreur(e instanceof Error ? e.message : "La génération a échoué.");
@@ -318,15 +349,10 @@ export default function OutilPage() {
 
   function telecharger() {
     if (!resultat) return;
-    const octets = Uint8Array.from(atob(resultat.docx), (c) => c.charCodeAt(0));
-    const blob = new Blob([octets], {
-      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+    a.href = resultat.blobUrl;
     a.download = resultat.filename;
     a.click();
-    URL.revokeObjectURL(a.href);
   }
 
   function nouveau() {

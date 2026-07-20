@@ -45,8 +45,11 @@ npm run dev                    # http://localhost:3000  — TOUT fonctionne en l
 - **Bibliothèque d'immeubles par-navigateur** (localStorage), non partagée entre appareils.
 
 ## 6. Notes techniques
-- Limite Vercel de 4,5 Mo par requête/réponse : les photos sont **compressées côté
-  navigateur** (1600 px / JPEG q80). Pour des rapports à très nombreuses photos (~20+),
-  prévoir un passage par un stockage type Vercel Blob.
-- La génération `.docx` est en JS pur (`lib/docx.ts`) : ouvre le template de l'agence et le
-  remplit sans le reconstruire — logo, cartouche, styles, pagination conservés à l'identique.
+- **La génération du `.docx` se fait dans le navigateur** (`lib/docx.ts`, à la demande) :
+  le serveur (`/api/extract`) ne reçoit et ne renvoie que du **texte** (transcription →
+  JSON de rédaction), quelques Ko seulement. Les **photos ne quittent jamais le poste**.
+  → aucune limite de taille Vercel, aucun stockage externe, et c'est plus rapide et plus privé.
+- Le moteur ouvre le template de l'agence et le remplit sans le reconstruire — logo,
+  cartouche, styles, pagination et couleurs de priorité conservés à l'identique.
+- Le template est servi en statique depuis `public/DIAG_MODEL_SDC.docx` (récupéré par le
+  navigateur au moment de générer).

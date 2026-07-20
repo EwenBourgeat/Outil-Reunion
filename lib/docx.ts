@@ -22,7 +22,7 @@ const COULEUR_PRIORITE: Record<string, string> = {
 };
 
 export interface PhotoDocx {
-  data: Buffer;
+  data: Uint8Array;
   legende: string;
 }
 
@@ -229,8 +229,9 @@ function remplirContacts(doc: any, contacts: Chantier["contacts"]): void {
 // Photos (miroir de _inserer_photos) — embarquement d'images en OOXML
 // ---------------------------------------------------------------------------
 
-// Dimensions d'un JPEG (lecture des marqueurs SOF).
-function tailleJpeg(buf: Buffer): { w: number; h: number } {
+// Dimensions d'un JPEG (lecture des marqueurs SOF) — compatible navigateur.
+function tailleJpeg(buf: Uint8Array): { w: number; h: number } {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   let i = 2;
   while (i < buf.length) {
     if (buf[i] !== 0xff) {
@@ -239,11 +240,11 @@ function tailleJpeg(buf: Buffer): { w: number; h: number } {
     }
     const marqueur = buf[i + 1];
     if (marqueur >= 0xc0 && marqueur <= 0xcf && marqueur !== 0xc4 && marqueur !== 0xc8 && marqueur !== 0xcc) {
-      const h = buf.readUInt16BE(i + 5);
-      const w = buf.readUInt16BE(i + 7);
+      const h = dv.getUint16(i + 5);
+      const w = dv.getUint16(i + 7);
       return { w, h };
     }
-    i += 2 + buf.readUInt16BE(i + 2);
+    i += 2 + dv.getUint16(i + 2);
   }
   return { w: 1600, h: 1200 };
 }
@@ -272,7 +273,7 @@ function insererPhotos(
   doc: any,
   zip: any,
   photos: PhotoDocx[],
-  ajouterMedia: (data: Buffer) => string,
+  ajouterMedia: (data: Uint8Array) => string,
 ): void {
   if (!photos.length) return;
   const ancre = trouver(doc, "photos");
@@ -368,11 +369,11 @@ function frDate(iso?: string): string {
 // ---------------------------------------------------------------------------
 
 export function genererDocx(
-  template: Buffer,
+  template: Uint8Array,
   donnees: DonneesCR,
   chantier: Chantier,
   photos: PhotoDocx[],
-): Buffer {
+): Uint8Array {
   const zip = new PizZip(template);
   const docXml = zip.file("word/document.xml")!.asText();
   const doc = new DOMParser().parseFromString(docXml, "text/xml");
@@ -387,7 +388,7 @@ export function genererDocx(
     if (m) maxRid = Math.max(maxRid, Number(m[1]));
   }
   let compteurMedia = 0;
-  const ajouterMedia = (data: Buffer): string => {
+  const ajouterMedia = (data: Uint8Array): string => {
     compteurMedia += 1;
     maxRid += 1;
     const rId = `rId${maxRid}`;
@@ -466,5 +467,5 @@ export function genererDocx(
   zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
   remplirCartouche(zip, chantier);
 
-  return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
+  return zip.generate({ type: "uint8array", compression: "DEFLATE" });
 }
