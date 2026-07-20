@@ -8,21 +8,21 @@ const R = 8;
 const P = 1;
 const KEYLEN = 32;
 
-// Séparateur « . » (et non « $ ») : « $ » serait interprété comme une variable
-// par les fichiers .env, ce qui corromprait le hash au chargement.
+// Empreinte 100 % HEXADÉCIMALE : 32 caractères de sel + 64 caractères de hash.
+// Aucun caractère spécial (ni ".", "-", "_", "$") → acceptée partout, y compris
+// dans les variables d'environnement Vercel. Les paramètres (N, r, p) sont fixes.
 export function hacherMdp(mdp: string): string {
   const sel = randomBytes(16);
   const dk = scryptSync(mdp, sel, KEYLEN, { N, r: R, p: P });
-  return `scrypt.${N}.${R}.${P}.${sel.toString("base64url")}.${dk.toString("base64url")}`;
+  return sel.toString("hex") + dk.toString("hex");
 }
 
 export function verifierMdp(mdp: string, encode: string): boolean {
   try {
-    const [algo, n, r, p, selB64, hashB64] = encode.split(".");
-    if (algo !== "scrypt") return false;
-    const sel = Buffer.from(selB64, "base64url");
-    const attendu = Buffer.from(hashB64, "base64url");
-    const dk = scryptSync(mdp, sel, attendu.length, { N: +n, r: +r, p: +p });
+    if (!/^[0-9a-fA-F]{96}$/.test(encode)) return false;
+    const sel = Buffer.from(encode.slice(0, 32), "hex");
+    const attendu = Buffer.from(encode.slice(32), "hex");
+    const dk = scryptSync(mdp, sel, attendu.length, { N, r: R, p: P });
     return dk.length === attendu.length && timingSafeEqual(dk, attendu);
   } catch {
     return false;

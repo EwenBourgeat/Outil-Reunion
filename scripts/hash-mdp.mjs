@@ -10,5 +10,6 @@ if (!mdp) {
 const N = 16384, R = 8, P = 1, KEYLEN = 32;
 const sel = randomBytes(16);
 const dk = scryptSync(mdp, sel, KEYLEN, { N, r: R, p: P });
-const hash = `scrypt.${N}.${R}.${P}.${sel.toString("base64url")}.${dk.toString("base64url")}`;
+// Empreinte 100% hexadécimale (32 + 64 caractères), sans caractère spécial.
+const hash = sel.toString("hex") + dk.toString("hex");
 console.log("\nAUTH_PASSWORD_HASH=" + hash + "\n");
