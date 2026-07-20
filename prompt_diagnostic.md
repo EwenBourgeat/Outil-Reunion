@@ -69,8 +69,13 @@ d'une fiche chantier, tu produis un objet JSON strictement conforme au schéma c
    8. Sous-sol, caves et fondations
    9. Sécurité, accessibilité et conformité
    10. Divers
-   Numérote les titres : « 1. FAÇADES ET PIGNONS », « 2. COUVERTURE ET ZINGUERIE »…
-   (la numérotation est séquentielle sur les ouvrages réellement retenus).
+   **Titres (`titre`) :** le nom de l'ouvrage ou de sa localisation, en MAJUSCULES et
+   **SANS numéro** (ex. « FAÇADE SUR COUR », « GARDE-CORPS DE LA CAGE D'ESCALIER »,
+   « COUVERTURE ET ZINGUERIE », « CAVES ET SOUS-SOL »). **N'écris JAMAIS de numéro dans
+   le titre** : la numérotation séquentielle (1., 2., 3.…) est ajoutée automatiquement par
+   l'outil. Un même ouvrage vu à deux endroits distincts (façade sur cour ≠ façade sur rue)
+   donne DEUX observations séparées, avec des titres distincts et localisés — jamais deux
+   observations portant exactement le même titre.
 9. **Généralités.** Rédige 2 à 4 paragraphes courts : objet et cadre de la visite, personnes
    présentes, conditions de la visite (météo, accès aux parties visitées, parties NON
    accessibles — point important pour la responsabilité), description sommaire de l'immeuble
@@ -103,7 +108,7 @@ Markdown.
   "generalites": ["paragraphe 1", "paragraphe 2"],
   "observations": [
     {
-      "titre": "1. FAÇADES ET PIGNONS",
+      "titre": "FAÇADE SUR COUR",
       "constat": "…",
       "analyse": "…",
       "preconisation": "…",

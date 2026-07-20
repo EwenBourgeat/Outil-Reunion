@@ -421,9 +421,16 @@ export function genererDocx(
   // --- Observations ---
   {
     const ancre = trouver(doc, "OBSERVATIONS");
-    for (const obs of [...(donnees.observations || [])].reverse()) {
+    const observations = donnees.observations || [];
+    // Insertion en ordre inverse (chaque bloc s'insère après l'ancre). La numérotation
+    // est imposée par l'outil à partir de l'ordre réel : 1., 2., 3.… sans trou ni doublon,
+    // quel que soit ce que le modèle a mis (on retire un éventuel numéro en tête de titre).
+    for (let i = observations.length - 1; i >= 0; i--) {
+      const obs = observations[i];
+      const titreSansNumero = String(obs.titre || "").replace(/^\s*\d+\s*[.)\-–]\s*/, "").trim();
+      const titre = `${i + 1}. ${titreSansNumero}`;
       const blocs: { texte: string; opt: OptInser }[] = [];
-      blocs.push({ texte: obs.titre, opt: { gras: true, taille: 11, espaceAvant: 10 } });
+      blocs.push({ texte: titre, opt: { gras: true, taille: 11, espaceAvant: 10 } });
       const prio = (obs.priorite || "").toUpperCase();
       if (prio)
         blocs.push({ texte: `Priorité : ${prio}`, opt: { gras: true, taille: 9, couleur: COULEUR_PRIORITE[prio] || null } });
