@@ -63,9 +63,19 @@ function creer(doc: any, tag: string, attrs?: Record<string, string>): El {
   return el;
 }
 
+// Supprime les tirets longs (cadratin — / demi-cadratin –), qui font « généré par IA ».
+// Filet de sécurité garanti : quoi que renvoie Gemini, aucun cadratin n'atteint le document.
+// (Les traits d'union ordinaires « - », ex. codes immeuble EXE-00-000, sont préservés.)
+function nettoyerTexte(texte: string): string {
+  return String(texte)
+    .replace(/\s*[—–]\s*/g, ", ")
+    .replace(/\s*,\s*,\s*/g, ", ")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
 function runTexte(doc: any, texte: string): El {
   const t = creer(doc, "w:t", { "xml:space": "preserve" });
-  t.appendChild(doc.createTextNode(texte));
+  t.appendChild(doc.createTextNode(nettoyerTexte(texte)));
   return t;
 }
 
@@ -325,7 +335,7 @@ function insererPhotos(
         pCap.appendChild(pprCap);
         const runCap = creer(doc, "w:r");
         runCap.appendChild(faireRPr(doc, { taille: 8, italique: true }));
-        runCap.appendChild(runTexte(doc, `Photo n° ${idx + 1}` + (ph.legende ? ` — ${ph.legende}` : "")));
+        runCap.appendChild(runTexte(doc, `Photo n° ${idx + 1}` + (ph.legende ? ` : ${ph.legende}` : "")));
         pCap.appendChild(runCap);
         tc.appendChild(pCap);
       } else {
@@ -435,9 +445,9 @@ export function genererDocx(
       const prio = (obs.priorite || "").toUpperCase();
       if (prio)
         blocs.push({ texte: `Priorité : ${prio}`, opt: { gras: true, taille: 9, couleur: COULEUR_PRIORITE[prio] || null } });
-      if (obs.constat) blocs.push({ texte: `Constat — ${obs.constat}`, opt: { taille: 10 } });
-      if (obs.analyse) blocs.push({ texte: `Analyse — ${obs.analyse}`, opt: { taille: 10 } });
-      if (obs.preconisation) blocs.push({ texte: `Préconisation — ${obs.preconisation}`, opt: { taille: 10 } });
+      if (obs.constat) blocs.push({ texte: `Constat : ${obs.constat}`, opt: { taille: 10 } });
+      if (obs.analyse) blocs.push({ texte: `Analyse : ${obs.analyse}`, opt: { taille: 10 } });
+      if (obs.preconisation) blocs.push({ texte: `Préconisation : ${obs.preconisation}`, opt: { taille: 10 } });
       if (obs.photos_liees?.length) {
         const nums = obs.photos_liees.map((n) => `n° ${n}`).join(", ");
         blocs.push({ texte: `(cf. photos ${nums})`, opt: { taille: 9, italique: true } });
