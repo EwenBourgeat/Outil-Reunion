@@ -31,12 +31,6 @@ EXT_PHOTOS = {".jpg", ".jpeg", ".png", ".heic", ".webp"}
 LARGEUR_PHOTO_CM = 8.3          # 2 photos par ligne sur A4 (marges ~0,6")
 PHOTOS_PAR_LIGNE = 2
 
-COULEUR_PRIORITE = {
-    "URGENT": RGBColor(0xC0, 0x00, 0x00),
-    "COURT TERME": RGBColor(0xBF, 0x62, 0x00),
-    "MOYEN TERME": RGBColor(0x40, 0x40, 0x40),
-}
-
 
 # ---------------------------------------------------------------------------
 # 1. EXTRACTION  (note vocale -> JSON)
@@ -187,10 +181,6 @@ def generer(donnees: dict, chantier: dict, template: str, sortie: str,
     for obs in reversed(donnees.get("observations", [])):
         blocs: list[tuple] = []
         blocs.append((obs["titre"], dict(gras=True, taille=11, espace_avant=10)))
-        prio = (obs.get("priorite") or "").upper()
-        if prio:
-            blocs.append((f"Priorité : {prio}",
-                          dict(gras=True, taille=9, couleur=COULEUR_PRIORITE.get(prio))))
         if obs.get("constat"):
             blocs.append((f"Constat — {obs['constat']}", dict(taille=10)))
         if obs.get("analyse"):

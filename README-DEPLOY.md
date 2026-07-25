@@ -50,6 +50,6 @@ npm run dev                    # http://localhost:3000  — TOUT fonctionne en l
   JSON de rédaction), quelques Ko seulement. Les **photos ne quittent jamais le poste**.
   → aucune limite de taille Vercel, aucun stockage externe, et c'est plus rapide et plus privé.
 - Le moteur ouvre le template de l'agence et le remplit sans le reconstruire — logo,
-  cartouche, styles, pagination et couleurs de priorité conservés à l'identique.
+  cartouche, styles et pagination conservés à l'identique.
 - Le template est servi en statique depuis `public/DIAG_MODEL_SDC.docx` (récupéré par le
   navigateur au moment de générer).

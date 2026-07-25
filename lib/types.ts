@@ -25,7 +25,6 @@ export interface Observation {
   constat?: string;
   analyse?: string;
   preconisation?: string;
-  priorite?: string;
   photos_liees?: number[];
 }
 

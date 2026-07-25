@@ -31,7 +31,7 @@ Le dossier contient un moteur qui **fonctionne déjà** et qui a été validé :
 | Fichier | Rôle |
 |---|---|
 | `cr_engine.py` | `extraire()` : note vocale + fiche chantier → JSON structuré (appel Claude). `generer()` : JSON + template + photos → `.docx`. |
-| `prompt_diagnostic.md` | Le prompt métier : ton, structure Constat / Analyse / Préconisation / Priorité, prudence juridique, volet énergétique. |
+| `prompt_diagnostic.md` | Le prompt métier : ton, structure Constat / Analyse / Préconisation, prudence juridique, volet énergétique. |
 | `template/DIAG_MODEL_SDC.docx` | Le template de l'agence. Logo, cartouche de pied de page, styles. **Ne le modifie jamais.** |
 | `run.py` | CLI actuel, à conserver. |
 | `exemples/` | Une fiche chantier, une note vocale, un JSON extrait. Sert de jeu de test. |
@@ -139,9 +139,7 @@ Dials : `DESIGN_VARIANCE: 4` · `MOTION_INTENSITY: 3` · `VISUAL_DENSITY: 3`.
 
 - **Palette** : fond blanc cassé (`#FAFAF8`), texte quasi-noir (`#1A1A1A`), une seule couleur
   d'accent, un orange de sécurité chantier (`#D65A1F`), réservée au bouton primaire, aux
-  états actifs et à l'enregistrement. Gris de structure pour les bordures. Trois couleurs de
-  priorité qui reprennent celles du document : URGENT rouge, COURT TERME orange, MOYEN TERME
-  gris.
+  états actifs et à l'enregistrement. Gris de structure pour les bordures.
 - **Typographie** : une grotesque neutre et lisible (Inter Tight ou Söhne si dispo, sinon
   system-ui). Corps à 16 px minimum. Il a plus de cinquante ans, il lira ça sur un écran de
   PC portable mal réglé.

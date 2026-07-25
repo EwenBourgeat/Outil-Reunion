@@ -47,7 +47,7 @@ l'architecte n'a pas dictées et qu'il doit vérifier avant envoi.
 
 | Fichier | Rôle |
 |---|---|
-| `prompt_diagnostic.md` | **Le cerveau.** Ton, structure Constat/Analyse/Préconisation/Priorité, ordre des ouvrages, prudence juridique, volet énergétique. **C'est ici qu'on itère** avec l'architecte : chaque remarque de sa part = une règle ajoutée ici. |
+| `prompt_diagnostic.md` | **Le cerveau.** Ton, structure Constat/Analyse/Préconisation, ordre des ouvrages, prudence juridique, volet énergétique. **C'est ici qu'on itère** avec l'architecte : chaque remarque de sa part = une règle ajoutée ici. |
 | `cr_engine.py` | Extraction (appel Claude) + remplissage du .docx + insertion des photos. |
 | `template/DIAG_MODEL_SDC.docx` | Le gabarit de l'agence. Ne pas le modifier sans re-tester. |
 
@@ -57,7 +57,6 @@ Chaque désordre est rendu sous la forme :
 
 ```
 1. FAÇADE SUR COUR
-Priorité : URGENT                     (URGENT / COURT TERME / MOYEN TERME)
 Constat — ce qui est vu, localisé, sans jugement
 Analyse — cause probable, au conditionnel, « sous réserve de sondages »
 Préconisation — mise en sécurité / investigation / travaux / BET

@@ -14,13 +14,6 @@ const EMU_PAR_CM = 360000;
 const LARGEUR_PHOTO_CM = 8.3;
 const PHOTOS_PAR_LIGNE = 2;
 
-// Couleurs de priorité (identiques au moteur d'origine).
-const COULEUR_PRIORITE: Record<string, string> = {
-  URGENT: "C00000",
-  "COURT TERME": "BF6200",
-  "MOYEN TERME": "404040",
-};
-
 export interface PhotoDocx {
   data: Uint8Array;
   legende: string;
@@ -365,7 +358,61 @@ function remplirCartouche(zip: any, chantier: Chantier): void {
   ecrireCellule(doc, cell(0, 5), frDate(chantier.date_visite), { taille: 8, centre: true });
   ecrireCellule(doc, cell(1, 0), chantier.moa || "", { taille: 8, centre: true });
   ecrireCellule(doc, cell(1, 1), chantier.adresse || "", { taille: 8, centre: true });
+  forcerBorduresCellules(doc, tbl);
+  majusculerCartouche(doc, tbl);
   zip.file(chemin, new XMLSerializer().serializeToString(doc));
+}
+
+// Cartouche tout en capitales dans TOUS les lecteurs.
+// Le gabarit affiche ses libellés en majuscules via l'attribut de style <w:caps/> (petites
+// capitales). Certains lecteurs ignorent <w:caps/> et affichent alors le texte brut, en casse
+// d'origine (« Objet et lieu de l'opération » au lieu de « OBJET ET LIEU DE L'OPÉRATION »).
+// On grave donc la majuscule dans le texte lui-même : le rendu ne dépend plus d'aucune option
+// de mise en forme. Le cartouche est intégralement conçu en capitales, l'opération est donc sûre.
+function majusculerCartouche(doc: any, tbl: El): void {
+  for (const t of tous(tbl, "w:t")) {
+    const texte = t.textContent || "";
+    const maj = texte.toUpperCase();
+    if (maj === texte) continue;
+    while (t.firstChild) t.removeChild(t.firstChild);
+    t.appendChild(doc.createTextNode(maj));
+    // Conserver les espaces significatifs (ex. « n° CROAIF » précédé d'une espace).
+    if (/^\s|\s$/.test(maj) && t.getAttribute("xml:space") !== "preserve") {
+      t.setAttribute("xml:space", "preserve");
+    }
+  }
+}
+
+// Grille du cartouche fiable dans TOUS les lecteurs.
+// Certains moteurs de rendu (Aperçu / Coup d'œil / Pages sur macOS, quelques export PDF)
+// ignorent les bordures posées au niveau du tableau (<w:tblBorders>) et n'affichent QUE
+// celles définies cellule par cellule (<w:tcBorders>). Sans elles, le pied de page apparaît
+// « sans grille », en vrac. On repose donc des bordures explicites sur chaque cellule.
+function forcerBorduresCellules(doc: any, tbl: El): void {
+  // Ordre imposé par le schéma CT_TcPr : <w:tcBorders> doit précéder ces éléments.
+  const apres = ["w:shd", "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText", "w:vAlign", "w:hideMark"];
+  for (const tc of tous(tbl, "w:tc")) {
+    let tcPr = enfants(tc, "w:tcPr")[0];
+    if (!tcPr) {
+      tcPr = creer(doc, "w:tcPr");
+      tc.insertBefore(tcPr, tc.firstChild);
+    }
+    enfants(tcPr, "w:tcBorders").forEach((e) => tcPr.removeChild(e));
+    const bordures = creer(doc, "w:tcBorders");
+    for (const cote of ["w:top", "w:left", "w:bottom", "w:right"]) {
+      bordures.appendChild(creer(doc, cote, { "w:val": "single", "w:sz": "8", "w:space": "0", "w:color": "auto" }));
+    }
+    let ref: El | null = null;
+    for (let i = 0; i < tcPr.childNodes.length; i++) {
+      const n = tcPr.childNodes[i] as El;
+      if (n.nodeType === 1 && apres.includes(n.tagName)) {
+        ref = n;
+        break;
+      }
+    }
+    if (ref) tcPr.insertBefore(bordures, ref);
+    else tcPr.appendChild(bordures);
+  }
 }
 
 function frDate(iso?: string): string {
@@ -442,9 +489,6 @@ export function genererDocx(
       const titre = `${i + 1}. ${titreSansNumero}`;
       const blocs: { texte: string; opt: OptInser }[] = [];
       blocs.push({ texte: titre, opt: { gras: true, taille: 11, espaceAvant: 10 } });
-      const prio = (obs.priorite || "").toUpperCase();
-      if (prio)
-        blocs.push({ texte: `Priorité : ${prio}`, opt: { gras: true, taille: 9, couleur: COULEUR_PRIORITE[prio] || null } });
       if (obs.constat) blocs.push({ texte: `Constat : ${obs.constat}`, opt: { taille: 10 } });
       if (obs.analyse) blocs.push({ texte: `Analyse : ${obs.analyse}`, opt: { taille: 10 } });
       if (obs.preconisation) blocs.push({ texte: `Préconisation : ${obs.preconisation}`, opt: { taille: 10 } });
