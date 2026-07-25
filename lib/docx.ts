@@ -19,6 +19,12 @@ export interface PhotoDocx {
   legende: string;
 }
 
+// Champs propres au compte rendu de chantier (bloc titre), saisis dans l'app.
+export interface MetaChantier {
+  numeroReunion?: string;
+  objet?: string;
+}
+
 type El = any;
 
 // ---------------------------------------------------------------------------
@@ -422,20 +428,12 @@ function frDate(iso?: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Point d'entrée
+// Éléments partagés entre les deux documents (visite + chantier)
 // ---------------------------------------------------------------------------
 
-export function genererDocx(
-  template: Uint8Array,
-  donnees: DonneesCR,
-  chantier: Chantier,
-  photos: PhotoDocx[],
-): Uint8Array {
-  const zip = new PizZip(template);
-  const docXml = zip.file("word/document.xml")!.asText();
-  const doc = new DOMParser().parseFromString(docXml, "text/xml");
-
-  // Ajout d'images : media + relations dans document.xml.rels.
+// Prépare l'ajout d'images : renvoie une fonction pour embarquer un média (et sa relation)
+// et une fonction pour réécrire le fichier de relations dans le zip.
+function preparerMedia(zip: any): { ajouterMedia: (d: Uint8Array) => string; ecrireRels: () => void } {
   const relsChemin = "word/_rels/document.xml.rels";
   const relsDoc = new DOMParser().parseFromString(zip.file(relsChemin)!.asText(), "text/xml");
   const relsRoot = tous(relsDoc, "Relationships")[0];
@@ -451,14 +449,140 @@ export function genererDocx(
     const rId = `rId${maxRid}`;
     const nom = `image_cr_${compteurMedia}.jpeg`;
     zip.file(`word/media/${nom}`, data);
-    const rel = creer(relsDoc, "Relationship", {
-      Id: rId,
-      Type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
-      Target: `media/${nom}`,
-    });
-    relsRoot.appendChild(rel);
+    relsRoot.appendChild(
+      creer(relsDoc, "Relationship", {
+        Id: rId,
+        Type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+        Target: `media/${nom}`,
+      }),
+    );
     return rId;
   };
+  const ecrireRels = () => zip.file(relsChemin, new XMLSerializer().serializeToString(relsDoc));
+  return { ajouterMedia, ecrireRels };
+}
+
+// Insère les paragraphes de « généralités » après l'ancre correspondante.
+function insererGeneralites(doc: any, ancre: El, generalites: string[]): void {
+  for (const para of [...generalites].reverse()) {
+    insererApres(doc, ancre, para, { espaceAvant: 4, taille: 10 });
+  }
+}
+
+// Insère les observations (Constat / Analyse / Préconisation) après l'ancre. La numérotation
+// séquentielle (1., 2., 3.…) est imposée par l'outil, quel que soit l'ordre renvoyé par le modèle.
+function insererObservations(doc: any, ancre: El, observations: Observation[]): void {
+  for (let i = observations.length - 1; i >= 0; i--) {
+    const obs = observations[i];
+    const titreSansNumero = String(obs.titre || "").replace(/^\s*\d+\s*[.)\-–]\s*/, "").trim();
+    const titre = `${i + 1}. ${titreSansNumero}`;
+    const blocs: { texte: string; opt: OptInser }[] = [];
+    blocs.push({ texte: titre, opt: { gras: true, taille: 11, espaceAvant: 10 } });
+    if (obs.constat) blocs.push({ texte: `Constat : ${obs.constat}`, opt: { taille: 10 } });
+    if (obs.analyse) blocs.push({ texte: `Analyse : ${obs.analyse}`, opt: { taille: 10 } });
+    if (obs.preconisation) blocs.push({ texte: `Préconisation : ${obs.preconisation}`, opt: { taille: 10 } });
+    if (obs.photos_liees?.length) {
+      const nums = obs.photos_liees.map((n) => `n° ${n}`).join(", ");
+      blocs.push({ texte: `(cf. photos ${nums})`, opt: { taille: 9, italique: true } });
+    }
+    for (const b of blocs.reverse()) insererApres(doc, ancre, b.texte, b.opt);
+  }
+}
+
+// Prochain frère qui est un paragraphe <w:p> (en sautant les autres nœuds).
+function paragrapheSuivant(p: El): El | null {
+  let n = p.nextSibling as El | null;
+  while (n) {
+    if (n.nodeType === 1 && (n as El).tagName === "w:p") return n as El;
+    n = n.nextSibling as El | null;
+  }
+  return null;
+}
+
+// Remplace TOUT le texte d'un paragraphe par `texte`, en conservant la mise en forme du
+// premier run (police, taille, casse…). Sert à remplir le bloc titre du CR de chantier,
+// dont les valeurs (adresse, objet…) sont des exemples à écraser, non des libellés.
+function definirTexteParagraphe(doc: any, p: El, texte: string): void {
+  const runs = enfants(p, "w:r");
+  const premier = runs[0];
+  if (!premier) {
+    const r = creer(doc, "w:r");
+    r.appendChild(runTexte(doc, texte));
+    p.appendChild(r);
+    return;
+  }
+  for (let i = runs.length - 1; i >= 1; i--) p.removeChild(runs[i]);
+  for (const enfant of Array.from(premier.childNodes) as El[]) {
+    if (enfant.nodeType === 1 && enfant.tagName === "w:t") premier.removeChild(enfant);
+  }
+  premier.appendChild(runTexte(doc, texte));
+}
+
+// ---------------------------------------------------------------------------
+// Contacts du CR de chantier (tableau MOA / MOE / ENTREPRISES)
+// ---------------------------------------------------------------------------
+
+// Le tableau contacts du modèle chantier a des lignes d'en-tête de groupe intercalées.
+// Lignes de données : SYNDIC (r2) et CONSEIL SYNDICAL (r3) pour la MOA, GO ARCHITECTURE (r5)
+// pour la MOE, ETS (r7) pour les entreprises. On remplit la MOA depuis la fiche (nom + présence,
+// clonage si besoin) ; pour la MOE on ne touche qu'à la présence (le bloc agence reste intact).
+function remplirContactsChantier(doc: any, contacts: Chantier["contacts"]): void {
+  const tbl = tous(doc, "w:tbl")[0];
+  if (!tbl) return;
+  const rows = enfants(tbl, "w:tr");
+  if (rows.length < 6) return;
+
+  const remplirLigne = (
+    row: El,
+    ct: Chantier["contacts"][number],
+    opts: { presenceSeule?: boolean } = {},
+  ) => {
+    const cells = enfants(row, "w:tc");
+    if (cells.length < 6) return;
+    if (!opts.presenceSeule) {
+      if (ct.organisme) ecrireCellule(doc, cells[0], ct.organisme, { gras: true, taille: 8 });
+      if (ct.nom) ecrireCellule(doc, cells[1], ct.nom, { taille: 8 });
+      if (ct.telephone) ecrireCellule(doc, cells[2], ct.telephone, { taille: 8 });
+      if (ct.email) ecrireCellule(doc, cells[3], ct.email, { taille: 8 });
+    }
+    ecrireCellule(doc, cells[4], ct.present ? "X" : "", { taille: 8, centre: true });
+    ecrireCellule(doc, cells[5], ct.present ? "" : "X", { taille: 8, centre: true });
+  };
+
+  const moa = contacts.filter((c) => (c.groupe || "MOA").toUpperCase() === "MOA");
+  const moe = contacts.filter((c) => (c.groupe || "").toUpperCase() === "MOE");
+
+  const lignesMoa = [rows[2], rows[3]].filter(Boolean) as El[];
+  let ancre = rows[3];
+  moa.forEach((c, i) => {
+    if (i < lignesMoa.length) {
+      remplirLigne(lignesMoa[i], c);
+    } else {
+      const tr = rows[3].cloneNode(true) as El;
+      ancre.parentNode!.insertBefore(tr, ancre.nextSibling);
+      ancre = tr;
+      remplirLigne(tr, c);
+    }
+  });
+
+  // MOE : le bloc GO Architecture est déjà dans le modèle ; on ne met à jour que la présence.
+  if (moe.length && rows[5]) remplirLigne(rows[5], moe[0], { presenceSeule: true });
+}
+
+// ---------------------------------------------------------------------------
+// Point d'entrée
+// ---------------------------------------------------------------------------
+
+export function genererDocx(
+  template: Uint8Array,
+  donnees: DonneesCR,
+  chantier: Chantier,
+  photos: PhotoDocx[],
+): Uint8Array {
+  const zip = new PizZip(template);
+  const docXml = zip.file("word/document.xml")!.asText();
+  const doc = new DOMParser().parseFromString(docXml, "text/xml");
+  const { ajouterMedia, ecrireRels } = preparerMedia(zip);
 
   // --- Page de garde ---
   completer(doc, trouver(doc, "SDC"), chantier.sdc);
@@ -469,36 +593,10 @@ export function genererDocx(
   remplirContacts(doc, chantier.contacts);
 
   // --- Généralités ---
-  {
-    const ancre = trouver(doc, "generalites");
-    for (const para of [...(donnees.generalites || [])].reverse()) {
-      insererApres(doc, ancre, para, { espaceAvant: 4, taille: 10 });
-    }
-  }
+  insererGeneralites(doc, trouver(doc, "generalites"), donnees.generalites || []);
 
   // --- Observations ---
-  {
-    const ancre = trouver(doc, "OBSERVATIONS");
-    const observations = donnees.observations || [];
-    // Insertion en ordre inverse (chaque bloc s'insère après l'ancre). La numérotation
-    // est imposée par l'outil à partir de l'ordre réel : 1., 2., 3.… sans trou ni doublon,
-    // quel que soit ce que le modèle a mis (on retire un éventuel numéro en tête de titre).
-    for (let i = observations.length - 1; i >= 0; i--) {
-      const obs = observations[i];
-      const titreSansNumero = String(obs.titre || "").replace(/^\s*\d+\s*[.)\-–]\s*/, "").trim();
-      const titre = `${i + 1}. ${titreSansNumero}`;
-      const blocs: { texte: string; opt: OptInser }[] = [];
-      blocs.push({ texte: titre, opt: { gras: true, taille: 11, espaceAvant: 10 } });
-      if (obs.constat) blocs.push({ texte: `Constat : ${obs.constat}`, opt: { taille: 10 } });
-      if (obs.analyse) blocs.push({ texte: `Analyse : ${obs.analyse}`, opt: { taille: 10 } });
-      if (obs.preconisation) blocs.push({ texte: `Préconisation : ${obs.preconisation}`, opt: { taille: 10 } });
-      if (obs.photos_liees?.length) {
-        const nums = obs.photos_liees.map((n) => `n° ${n}`).join(", ");
-        blocs.push({ texte: `(cf. photos ${nums})`, opt: { taille: 9, italique: true } });
-      }
-      for (const b of blocs.reverse()) insererApres(doc, ancre, b.texte, b.opt);
-    }
-  }
+  insererObservations(doc, trouver(doc, "OBSERVATIONS"), donnees.observations || []);
 
   // --- Conclusion ---
   {
@@ -517,9 +615,68 @@ export function genererDocx(
   insererPhotos(doc, zip, photos, ajouterMedia);
 
   // --- Écriture ---
-  zip.file(relsChemin, new XMLSerializer().serializeToString(relsDoc));
+  ecrireRels();
   zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
   remplirCartouche(zip, chantier);
 
   return zip.generate({ type: "uint8array", compression: "DEFLATE" });
+}
+
+// ---------------------------------------------------------------------------
+// Compte rendu de chantier — remplissage du modèle CR (même pipeline que la visite,
+// mais repères propres : bloc titre, contacts MOA/MOE/ENTREPRISES, planning laissé vierge).
+// ---------------------------------------------------------------------------
+
+export function genererDocxChantier(
+  template: Uint8Array,
+  donnees: DonneesCR,
+  chantier: Chantier,
+  photos: PhotoDocx[],
+  meta: MetaChantier = {},
+): Uint8Array {
+  const zip = new PizZip(template);
+  const doc = new DOMParser().parseFromString(zip.file("word/document.xml")!.asText(), "text/xml");
+  const { ajouterMedia, ecrireRels } = preparerMedia(zip);
+
+  // --- Bloc titre (valeurs d'exemple à écraser, mise en forme conservée) ---
+  const titre = trouver(doc, "CR DE CHANTIER");
+  const num = String(meta.numeroReunion || "").trim();
+  definirTexteParagraphe(doc, titre, num ? `CR DE CHANTIER N°${num}` : "CR DE CHANTIER");
+  const pAdresse = paragrapheSuivant(titre); // ligne adresse (juste sous le titre)
+  if (pAdresse) definirTexteParagraphe(doc, pAdresse, (chantier.adresse || "").toUpperCase());
+  const pObjet = pAdresse ? paragrapheSuivant(pAdresse) : null; // ligne objet de l'opération
+  if (pObjet) definirTexteParagraphe(doc, pObjet, (meta.objet || "").toUpperCase());
+  essayer(() => definirTexteParagraphe(doc, trouver(doc, "REUNION du"), `REUNION du ${frDate(chantier.date_visite)}`));
+
+  // --- Code immeuble ---
+  essayer(() => completer(doc, trouver(doc, "Code immeuble"), String(chantier.code_immeuble || "")));
+
+  // --- Contacts (MOA / MOE / ENTREPRISES) ---
+  remplirContactsChantier(doc, chantier.contacts);
+
+  // --- Généralités ---
+  essayer(() => insererGeneralites(doc, trouver(doc, "generalites"), donnees.generalites || []));
+
+  // --- Observations ---
+  insererObservations(doc, trouver(doc, "OBSERVATIONS"), donnees.observations || []);
+
+  // --- Photos ---
+  insererPhotos(doc, zip, photos, ajouterMedia);
+
+  // --- Écriture ---
+  ecrireRels();
+  zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
+  remplirCartouche(zip, chantier);
+
+  return zip.generate({ type: "uint8array", compression: "DEFLATE" });
+}
+
+// Exécute une opération de remplissage optionnelle : si un repère est absent du modèle,
+// on ignore silencieusement plutôt que de faire échouer toute la génération.
+function essayer(fn: () => void): void {
+  try {
+    fn();
+  } catch {
+    /* repère absent du modèle : section ignorée */
+  }
 }

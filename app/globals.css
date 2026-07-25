@@ -3,24 +3,69 @@
 @tailwind utilities;
 
 /* ===================================================================
-   Identité « bleu de plan » — portée depuis l'app locale d'origine.
+   Deux identités de couleur, une seule maquette.
+   La couleur d'accent est pilotée par des variables CSS commutées via
+   l'attribut [data-theme] posé sur <html> (ou sur une carte de choix) :
+   - "visite"   → bleu de plan (identité d'origine)
+   - "chantier" → orange de sécurité chantier
+   Seule la couleur change ; toute la structure reste identique.
    =================================================================== */
-:root {
+:root,
+:root[data-theme="visite"] {
   color-scheme: light;
+  --paper-bg: #f4f7fb;
+  --accent: #1b5cab;
+  --accent-ink: #154a8c;
+  --accent-soft: #e6effb;
+  --accent-ring: rgba(27, 92, 171, 0.16);
+  --accent-shadow: rgba(21, 74, 140, 0.32);
+  --tint-hover: #f0f5fc;
+  --tint-depot: #f8fbfe;
+  --tint-strong: #e3eefb;
+  --halo-1: rgba(27, 92, 171, 0.055);
+  --halo-2: rgba(14, 36, 61, 0.045);
 }
+:root[data-theme="chantier"],
+[data-theme="chantier"] {
+  --paper-bg: #f7f5f2;
+  --accent: #d65a1f;
+  --accent-ink: #b0491a;
+  --accent-soft: #fbede4;
+  --accent-ring: rgba(214, 90, 31, 0.18);
+  --accent-shadow: rgba(176, 73, 26, 0.3);
+  --tint-hover: #fdf3ec;
+  --tint-depot: #fef9f5;
+  --tint-strong: #fbe7da;
+  --halo-1: rgba(214, 90, 31, 0.06);
+  --halo-2: rgba(58, 40, 26, 0.04);
+}
+/* Sous-arbre remis explicitement sur le bleu (carte de choix « visite »). */
+[data-theme="visite"] {
+  --accent: #1b5cab;
+  --accent-ink: #154a8c;
+  --accent-soft: #e6effb;
+  --accent-ring: rgba(27, 92, 171, 0.16);
+  --accent-shadow: rgba(21, 74, 140, 0.32);
+  --tint-hover: #f0f5fc;
+  --tint-depot: #f8fbfe;
+  --tint-strong: #e3eefb;
+  --halo-1: rgba(27, 92, 171, 0.055);
+  --halo-2: rgba(14, 36, 61, 0.045);
+}
+
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
 }
 body {
-  background: #f4f7fb;
+  background: var(--paper-bg);
   color: #0e243d;
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Halo bleu doux en fond (pas de motif). */
+/* Halo doux en fond, teinté par le thème (pas de motif). */
 body::before {
   content: "";
   position: fixed;
@@ -28,8 +73,8 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(900px 500px at 100% -12%, rgba(27, 92, 171, 0.055), transparent 60%),
-    radial-gradient(760px 480px at -10% 112%, rgba(14, 36, 61, 0.045), transparent 58%);
+    radial-gradient(900px 500px at 100% -12%, var(--halo-1), transparent 60%),
+    radial-gradient(760px 480px at -10% 112%, var(--halo-2), transparent 58%);
 }
 
 button,
@@ -68,16 +113,16 @@ textarea {
   }
   .champ:focus {
     outline: none;
-    border-color: #1b5cab;
-    box-shadow: 0 0 0 3px rgba(27, 92, 171, 0.16);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
   }
   .btn-primaire {
-    background: #1b5cab;
+    background: var(--accent);
     color: #fff;
     border-radius: 10px;
     font-weight: 600;
     transition: filter 0.16s, transform 0.06s, box-shadow 0.16s;
-    box-shadow: 0 1px 2px rgba(21, 74, 140, 0.35);
+    box-shadow: 0 1px 2px var(--accent-shadow);
   }
   .btn-primaire:hover:not(:disabled) {
     filter: brightness(1.06);
@@ -86,7 +131,7 @@ textarea {
     transform: translateY(1px);
   }
   .btn-primaire:disabled {
-    background: #b9cbe0;
+    background: #b9c3d0;
     color: #fff;
     box-shadow: none;
     cursor: not-allowed;
@@ -100,23 +145,23 @@ textarea {
     transition: border-color 0.16s, color 0.16s, background 0.16s;
   }
   .btn-fant:hover {
-    border-color: #1b5cab;
-    color: #154a8c;
-    background: #f0f5fc;
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    background: var(--tint-hover);
   }
   .depot {
     border: 1.5px dashed #c6d5e6;
     border-radius: 11px;
-    background: #f8fbfe;
+    background: var(--tint-depot);
     transition: border-color 0.16s, background 0.16s;
   }
   .depot:hover {
-    border-color: #1b5cab;
-    background: #eff5fd;
+    border-color: var(--accent);
+    background: var(--tint-hover);
   }
   .depot--survol {
-    border-color: #1b5cab;
-    background: #e3eefb;
+    border-color: var(--accent);
+    background: var(--tint-strong);
   }
   .select-wrap {
     position: relative;
@@ -142,13 +187,13 @@ textarea {
     width: 92px;
     height: 92px;
     border-radius: 9999px;
-    background: #1b5cab;
+    background: var(--accent);
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: filter 0.16s, transform 0.06s;
-    box-shadow: 0 2px 12px rgba(21, 74, 140, 0.28);
+    box-shadow: 0 2px 12px var(--accent-shadow);
   }
   .rec-btn:hover {
     filter: brightness(1.06);
@@ -168,23 +213,66 @@ textarea {
     transition: border-color 0.16s, box-shadow 0.16s;
   }
   .photo-carte:hover {
-    border-color: #1b5cab;
+    border-color: var(--accent);
     box-shadow: 0 2px 8px rgba(14, 36, 61, 0.06);
   }
   .chk {
     width: 22px;
     height: 22px;
-    accent-color: #1b5cab;
+    accent-color: var(--accent);
     cursor: pointer;
+  }
+  /* Sélecteur de type de document — un rectangle segmenté en deux. */
+  .segmented {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: #fff;
+    border: 1px solid #dbe6f1;
+    border-radius: 13px;
+    box-shadow: 0 1px 2px rgba(14, 36, 61, 0.04);
+  }
+  .seg {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 0 12px;
+    border-radius: 9px;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.15;
+    text-align: center;
+    color: #566b80;
+    transition: color 0.16s, background 0.16s, box-shadow 0.16s;
+  }
+  .seg:hover:not(.seg--actif) {
+    color: var(--accent-ink);
+    background: var(--tint-hover);
+  }
+  .seg--actif {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 1px 2px var(--accent-shadow);
+  }
+  .seg svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
   }
   .barre-action {
     position: sticky;
     bottom: 0;
     z-index: 30;
-    background: rgba(244, 247, 251, 0.86);
+    background: rgba(250, 250, 250, 0.86);
     backdrop-filter: saturate(140%) blur(8px);
     -webkit-backdrop-filter: saturate(140%) blur(8px);
     border-top: 1px solid #dbe6f1;
+    /* Dégage la barre gestuelle iPhone (aucun effet sur les appareils sans encoche). */
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .modale-fond {
     background: rgba(14, 36, 61, 0.46);

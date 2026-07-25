@@ -28,6 +28,43 @@ function dataUrlVersUint8(dataUrl: string): Uint8Array {
 const CLE_WIP = "cr_diag_wip";
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 
+// Les deux types de document. Même workflow, même maquette : seuls le modèle Word,
+// le thème couleur et quelques libellés changent.
+type DocType = "visite" | "chantier";
+const TYPES_DOC: Record<
+  DocType,
+  {
+    titre: string;
+    kicker: string;
+    resume: string;
+    template: string;
+    prefixe: string;
+    intro: string;
+    bouton: string;
+  }
+> = {
+  visite: {
+    titre: "Rapport de visite",
+    kicker: "GO Architecture · Copropriété",
+    resume: "Diagnostic de copropriété à partir d'une visite : constats, analyses, préconisations.",
+    template: "/DIAG_MODEL_SDC.docx",
+    prefixe: "CR_DIAG",
+    intro:
+      "Note vocale de visite et photos : l'outil rédige le rapport et le met en page dans le template de l'agence, prêt à relire dans Word.",
+    bouton: "Générer le rapport de visite",
+  },
+  chantier: {
+    titre: "Compte rendu de chantier",
+    kicker: "GO Architecture · Chantier",
+    resume: "Compte rendu de réunion de chantier : suivi, observations, présents et excusés.",
+    template: "/CR_CHANTIER_MODEL.docx",
+    prefixe: "CR_CHANTIER",
+    intro:
+      "Note vocale de réunion de chantier et photos : l'outil rédige le compte rendu et le met en page dans le template de l'agence, prêt à relire dans Word.",
+    bouton: "Générer le compte rendu",
+  },
+};
+
 // --- Détection du format d'enregistrement (compat iOS / Android / desktop) ---
 function typeAudioSupporte(): string {
   if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
@@ -45,10 +82,14 @@ function extensionDepuisType(t: string): string {
 }
 
 export default function OutilPage() {
+  // Ouvre sur le dernier mode utilisé (restauré depuis le WIP) ; « visite » par défaut.
+  const [docType, setDocType] = useState<DocType>("visite");
   const [chantiers, setChantiers] = useState<Chantier[]>([]);
   const [index, setIndex] = useState<string>("");
   const [date, setDate] = useState<string>(aujourdhui());
   const [presents, setPresents] = useState<Record<number, boolean>>({});
+  const [numeroReunion, setNumeroReunion] = useState<string>("");
+  const [objet, setObjet] = useState<string>("");
   const [transcription, setTranscription] = useState<string>("");
   const [photos, setPhotos] = useState<PhotoUI[]>([]);
 
@@ -83,9 +124,12 @@ export default function OutilPage() {
       const brut = localStorage.getItem(CLE_WIP);
       if (brut) {
         const e = JSON.parse(brut);
+        if (e.docType === "visite" || e.docType === "chantier") setDocType(e.docType);
         if (e.index !== undefined) setIndex(e.index);
         if (e.date) setDate(e.date);
         if (e.presents) setPresents(e.presents);
+        if (e.numeroReunion) setNumeroReunion(e.numeroReunion);
+        if (e.objet) setObjet(e.objet);
         if (e.transcription) setTranscription(e.transcription);
         if (Array.isArray(e.photos)) setPhotos(e.photos);
       }
@@ -100,20 +144,22 @@ export default function OutilPage() {
   // ---- Sauvegarde WIP à chaque changement ----------------------------------
   useEffect(() => {
     if (!restaure) return;
-    const etat = { index, date, presents, transcription, photos };
+    const base = { docType, index, date, presents, numeroReunion, objet, transcription };
     try {
-      localStorage.setItem(CLE_WIP, JSON.stringify(etat));
+      localStorage.setItem(CLE_WIP, JSON.stringify({ ...base, photos }));
     } catch {
       try {
-        localStorage.setItem(
-          CLE_WIP,
-          JSON.stringify({ index, date, presents, transcription, photos: photos.map((p) => ({ ...p, dataUrl: "" })) }),
-        );
+        localStorage.setItem(CLE_WIP, JSON.stringify({ ...base, photos: photos.map((p) => ({ ...p, dataUrl: "" })) }));
       } catch {
         /* ignore */
       }
     }
-  }, [index, date, presents, transcription, photos, restaure]);
+  }, [docType, index, date, presents, numeroReunion, objet, transcription, photos, restaure]);
+
+  // ---- Thème couleur piloté par le type de document ------------------------
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", docType || "visite");
+  }, [docType]);
 
   const chantierCourant = index !== "" ? chantiers[Number(index)] : undefined;
 
@@ -294,7 +340,8 @@ export default function OutilPage() {
   const pret = index !== "" && transcription.trim().length > 0;
 
   async function generer() {
-    if (!chantierCourant) return;
+    if (!chantierCourant || !docType) return;
+    const cfg = TYPES_DOC[docType];
     setErreur("");
     const fiche: Chantier = {
       ...chantierCourant,
@@ -321,11 +368,14 @@ export default function OutilPage() {
       // 2. Mise en page du .docx directement dans le navigateur (photos incluses,
       //    sans jamais quitter le poste). Le moteur est chargé à la demande.
       setProgression({ transcription: "fait", analyse: "fait", miseenpage: "cours" });
-      const { genererDocx } = await import("@/lib/docx");
-      const tpl = await fetch("/DIAG_MODEL_SDC.docx");
+      const { genererDocx, genererDocxChantier } = await import("@/lib/docx");
+      const tpl = await fetch(cfg.template);
       const template = new Uint8Array(await tpl.arrayBuffer());
       const photosDocx = photos.map((p) => ({ data: dataUrlVersUint8(p.dataUrl), legende: p.legende || "" }));
-      const octets = genererDocx(template, donnees, fiche, photosDocx);
+      const octets =
+        docType === "chantier"
+          ? genererDocxChantier(template, donnees, fiche, photosDocx, { numeroReunion, objet })
+          : genererDocx(template, donnees, fiche, photosDocx);
 
       const slug = fiche.sdc.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
       const dateCompacte = (fiche.date_visite || "").replace(/-/g, "");
@@ -337,7 +387,7 @@ export default function OutilPage() {
       await new Promise((res) => setTimeout(res, 350));
       setProgression(null);
       setResultat({
-        filename: `CR_DIAG_${slug}_${dateCompacte}.docx`,
+        filename: `${cfg.prefixe}_${slug}_${dateCompacte}.docx`,
         blobUrl: URL.createObjectURL(blob),
         points_a_completer: donnees.points_a_completer || [],
       });
@@ -383,6 +433,10 @@ export default function OutilPage() {
     setModaleImmeuble(false);
   }
 
+  if (!restaure) return null;
+
+  const cfg = TYPES_DOC[docType];
+
   return (
     <>
       {erreur && (
@@ -402,11 +456,11 @@ export default function OutilPage() {
               <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><path d="M9 9v.01" /><path d="M9 12v.01" /><path d="M9 15v.01" />
             </svg>
           </div>
-          <div className="leading-tight">
-            <div className="kicker text-accent">GO Architecture · Copropriété</div>
-            <div className="font-display font-semibold text-[15.5px] -mt-[1px]">Compte rendu de diagnostic</div>
+          <div className="leading-tight min-w-0">
+            <div className="kicker text-accent truncate">GO Architecture</div>
+            <div className="font-display font-semibold text-[15.5px] -mt-[1px] truncate">Rédaction de comptes rendus</div>
           </div>
-          <button onClick={deconnexion} className="ml-auto btn-fant h-10 px-3 text-[13.5px] flex items-center gap-1.5">
+          <button onClick={deconnexion} className="ml-auto btn-fant h-10 px-3 text-[13.5px] flex items-center gap-1.5 shrink-0">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
             </svg>
@@ -415,11 +469,30 @@ export default function OutilPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-7 pb-28 space-y-5">
-        <p className="text-[14.5px] text-muted max-w-xl leading-relaxed">
-          Note vocale de visite et photos : l&apos;outil rédige le rapport et le met en page dans le
-          template de l&apos;agence, prêt à relire dans Word.
-        </p>
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 pb-32 space-y-5">
+        {/* Sélecteur du type de document — bascule le mode et le thème. */}
+        <div className="segmented w-full max-w-xl" role="tablist" aria-label="Type de document">
+          {(Object.keys(TYPES_DOC) as DocType[]).map((t) => (
+            <button
+              key={t} type="button" role="tab" aria-selected={docType === t} data-theme={t}
+              onClick={() => setDocType(t)}
+              className={`seg ${docType === t ? "seg--actif" : ""}`}
+            >
+              {t === "visite" ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 18h20M4 18l1.5-7a7 7 0 0 1 13 0L20 18M12 4V2" />
+                </svg>
+              )}
+              <span className="sm:hidden">{t === "visite" ? "Visite" : "Chantier"}</span>
+              <span className="hidden sm:inline">{TYPES_DOC[t].titre}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-[14.5px] text-muted max-w-xl leading-relaxed">{cfg.intro}</p>
 
         {/* 01 — CHANTIER */}
         <section className="card p-5 sm:p-6">
@@ -463,9 +536,32 @@ export default function OutilPage() {
                   <p className="text-[14px] font-mono text-ink/90">{`${chantierCourant.code_immeuble || "—"}  ·  ${chantierCourant.n_affaire || "—"}`}</p>
                 </div>
               </div>
-              <div className="mt-5 max-w-xs">
-                <label className="block kicker text-muted mb-2" htmlFor="date-visite">Date de la visite</label>
-                <input id="date-visite" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="champ w-full h-12" />
+              <div className="mt-5 grid sm:grid-cols-2 gap-5">
+                <div>
+                  <label className="block kicker text-muted mb-2" htmlFor="date-visite">
+                    {docType === "chantier" ? "Date de la réunion" : "Date de la visite"}
+                  </label>
+                  <input id="date-visite" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="champ w-full h-12" />
+                </div>
+                {docType === "chantier" && (
+                  <div>
+                    <label className="block kicker text-muted mb-2" htmlFor="num-reunion">N° de réunion</label>
+                    <input
+                      id="num-reunion" type="text" inputMode="numeric" value={numeroReunion}
+                      onChange={(e) => setNumeroReunion(e.target.value)} placeholder="1" className="champ w-full h-12"
+                    />
+                  </div>
+                )}
+                {docType === "chantier" && (
+                  <div className="sm:col-span-2">
+                    <label className="block kicker text-muted mb-2" htmlFor="objet-op">Objet de l&apos;opération</label>
+                    <input
+                      id="objet-op" type="text" value={objet}
+                      onChange={(e) => setObjet(e.target.value)} placeholder="Ex. Ravalement des façades sur cour"
+                      className="champ w-full h-12"
+                    />
+                  </div>
+                )}
               </div>
               <div className="mt-5">
                 <span className="block kicker text-muted mb-2.5">
@@ -502,7 +598,7 @@ export default function OutilPage() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-3.5">
-            <div className="rounded-[11px] border border-line p-5 flex flex-col items-center justify-center text-center bg-[#F8FBFE]">
+            <div className="rounded-[11px] border border-line p-5 flex flex-col items-center justify-center text-center bg-[var(--tint-depot)]">
               <button
                 onClick={basculerEnreg} disabled={microBloque}
                 className={`rec-btn ${enreg ? "enreg pulse-rec" : ""} ${microBloque ? "opacity-40 cursor-not-allowed" : ""}`}
@@ -585,16 +681,16 @@ export default function OutilPage() {
                 <div key={ph.id} className="photo-carte">
                   <div className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={ph.dataUrl} alt="" className="w-full h-28 object-cover bg-[#E8EFF7]" />
+                    <img src={ph.dataUrl} alt="" className="w-full h-28 object-cover bg-[var(--tint-strong)]" />
                     <span className="absolute top-1.5 left-1.5 font-display text-[11px] font-medium bg-ink/75 text-paper px-1.5 py-0.5 rounded">N° {i + 1}</span>
-                    <button onClick={() => supprimerPhoto(ph.id)} className="absolute top-1.5 right-1.5 w-7 h-7 min-h-0 rounded-full bg-ink/70 text-white flex items-center justify-center hover:bg-urgent transition" aria-label="Supprimer">
+                    <button onClick={() => supprimerPhoto(ph.id)} className="absolute top-1.5 right-1.5 w-8 h-8 min-h-0 rounded-full bg-ink/70 text-white flex items-center justify-center hover:bg-urgent transition" aria-label="Supprimer">
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                     </button>
                     <div className="absolute bottom-1.5 right-1.5 flex gap-1">
-                      <button onClick={() => deplacerPhoto(i, -1)} disabled={i === 0} className="w-7 h-7 min-h-0 rounded-md bg-ink/70 text-white flex items-center justify-center disabled:opacity-30 hover:bg-accent transition" aria-label="Déplacer avant">
+                      <button onClick={() => deplacerPhoto(i, -1)} disabled={i === 0} className="w-8 h-8 min-h-0 rounded-md bg-ink/70 text-white flex items-center justify-center disabled:opacity-30 hover:bg-accent transition" aria-label="Déplacer avant">
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                       </button>
-                      <button onClick={() => deplacerPhoto(i, 1)} disabled={i === photos.length - 1} className="w-7 h-7 min-h-0 rounded-md bg-ink/70 text-white flex items-center justify-center disabled:opacity-30 hover:bg-accent transition" aria-label="Déplacer après">
+                      <button onClick={() => deplacerPhoto(i, 1)} disabled={i === photos.length - 1} className="w-8 h-8 min-h-0 rounded-md bg-ink/70 text-white flex items-center justify-center disabled:opacity-30 hover:bg-accent transition" aria-label="Déplacer après">
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                       </button>
                     </div>
@@ -602,7 +698,7 @@ export default function OutilPage() {
                   <input
                     type="text" value={ph.legende} placeholder="légende facultative"
                     onChange={(e) => legenderPhoto(ph.id, e.target.value)}
-                    className="w-full text-[13px] px-2.5 py-2 border-t border-line outline-none focus:bg-accent-soft/40" style={{ minHeight: 40 }}
+                    className="w-full text-[16px] sm:text-[13px] px-2.5 py-2 border-t border-line outline-none focus:bg-accent-soft/40" style={{ minHeight: 44 }}
                   />
                 </div>
               ))}
@@ -626,7 +722,7 @@ export default function OutilPage() {
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
             </svg>
-            Générer le compte rendu
+            {cfg.bouton}
           </button>
         </div>
       </div>
@@ -775,15 +871,15 @@ function ModaleImmeuble({
             </div>
             <div className="space-y-2">
               {contacts.map((c, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="select-wrap col-span-3">
-                    <select value={c.groupe} onChange={(e) => majContact(i, "groupe", e.target.value)} className="champ w-full h-11 text-[13.5px]">
+                <div key={i} className="flex gap-2 items-center">
+                  <div className="select-wrap w-[86px] sm:w-28 shrink-0">
+                    <select value={c.groupe} onChange={(e) => majContact(i, "groupe", e.target.value)} className="champ w-full h-11 text-[16px] sm:text-[13.5px]">
                       <option value="MOA">MOA</option><option value="MOE">MOE</option>
                     </select>
                   </div>
-                  <input value={c.organisme || ""} onChange={(e) => majContact(i, "organisme", e.target.value)} className="champ col-span-3 h-11 text-[13.5px]" placeholder="Organisme" />
-                  <input value={c.nom || ""} onChange={(e) => majContact(i, "nom", e.target.value)} className="champ col-span-5 h-11 text-[13.5px]" placeholder="Nom" />
-                  <button onClick={() => setContacts((cs) => cs.filter((_, j) => j !== i))} className="col-span-1 text-muted hover:text-urgent flex justify-center" aria-label="Retirer">
+                  <input value={c.organisme || ""} onChange={(e) => majContact(i, "organisme", e.target.value)} className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Organisme" />
+                  <input value={c.nom || ""} onChange={(e) => majContact(i, "nom", e.target.value)} className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Nom" />
+                  <button onClick={() => setContacts((cs) => cs.filter((_, j) => j !== i))} className="shrink-0 w-9 h-11 min-h-0 text-muted hover:text-urgent flex items-center justify-center" aria-label="Retirer">
                     <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>

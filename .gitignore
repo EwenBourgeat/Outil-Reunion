@@ -39,3 +39,6 @@ demo/
 # --- Systeme --------------------------------------------------------------
 .DS_Store
 Thumbs.db
+
+# --- Fichiers temporaires Office (verrous « ~$ » créés à l'ouverture) ------
+~$*

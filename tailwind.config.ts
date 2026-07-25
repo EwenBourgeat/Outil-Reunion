@@ -13,9 +13,10 @@ const config: Config = {
         faint: "#93A6B8",
         line: "#DBE6F1",
         "line-2": "#C6D5E6",
-        accent: "#1B5CAB",
-        "accent-ink": "#154A8C",
-        "accent-soft": "#E6EFFB",
+        // Accent piloté par le thème (variables CSS dans globals.css, commutées via [data-theme]).
+        accent: "var(--accent)",
+        "accent-ink": "var(--accent-ink)",
+        "accent-soft": "var(--accent-soft)",
         urgent: "#C0342B",
         court: "#A96A12",
         moyen: "#45586B",
