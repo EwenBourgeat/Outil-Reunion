@@ -46,7 +46,14 @@ ${transcription}
     body: JSON.stringify({
       system_instruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.4, maxOutputTokens: 16384 },
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.4,
+        maxOutputTokens: 16384,
+        // Désactive le « raisonnement » de Gemini 2.5 : réponses ~5-10 s au lieu de 20-70 s
+        // (évite les timeouts Vercel 60 s) et limite le remplissage inventif.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   if (!r.ok) {
