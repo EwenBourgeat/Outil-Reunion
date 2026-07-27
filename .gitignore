@@ -5,6 +5,10 @@ config.txt
 data/.secret
 data/auth.json
 
+# --- Cache local des immeubles (peut contenir des donnees reelles) ----------
+# La graine versionnee est data/chantiers.default.json (anonymisee).
+data/chantiers.json
+
 # --- Environnement Python -------------------------------------------------
 .venv/
 __pycache__/

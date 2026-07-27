@@ -40,13 +40,14 @@ export function parsePersonnes(raw?: string | null): Contact[] {
 }
 
 // Maître d'œuvre : l'agence elle-même, présente sur chaque réunion.
-// Ajoutée systématiquement en fin de liste des personnes concernées.
+// Coordonnées lues depuis l'environnement (MOE_*) pour ne figer aucune donnée de
+// contact dans le code (dépôt public). À défaut, seul le nom de l'agence apparaît.
 const CONTACT_MOE: Contact = {
   groupe: "MOE",
-  organisme: "GO ARCHITECTURE",
-  nom: "M. de Vallée, architecte DPLG",
-  telephone: "01 23 45 67 80\n01 23 45 67 81\n06 12 34 56 03",
-  email: "contact@go-architecture.fr",
+  organisme: process.env.MOE_ORGANISME ?? "GO ARCHITECTURE",
+  nom: process.env.MOE_NOM ?? "",
+  telephone: process.env.MOE_TEL ?? "",
+  email: process.env.MOE_EMAIL ?? "",
   present: true,
 };
 
