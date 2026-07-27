@@ -278,6 +278,32 @@ function drawingXml(rId: string, id: number, cx: number, cy: number): string {
   );
 }
 
+// Force un saut de page AVANT le paragraphe `p` (bannière « PHOTOS ») : la section
+// photos démarre toujours en haut d'une page, jamais séparée de sa bannière (fini la
+// bannière orpheline en bas d'une page et les photos rejetées sur la suivante).
+function forcerSautDePageAvant(doc: any, p: El): void {
+  let ppr = enfants(p, "w:pPr")[0];
+  if (!ppr) {
+    ppr = creer(doc, "w:pPr");
+    p.insertBefore(ppr, p.firstChild);
+  }
+  if (enfants(ppr, "w:pageBreakBefore").length) return;
+  // Ordre imposé par le schéma CT_PPr : pageBreakBefore vient juste après
+  // pStyle / keepNext / keepLines, avant tout le reste.
+  const avant = ["w:pStyle", "w:keepNext", "w:keepLines"];
+  let ref: El | null = null;
+  for (let i = 0; i < ppr.childNodes.length; i++) {
+    const n = ppr.childNodes[i] as El;
+    if (n.nodeType === 1 && !avant.includes(n.tagName)) {
+      ref = n;
+      break;
+    }
+  }
+  const pb = creer(doc, "w:pageBreakBefore");
+  if (ref) ppr.insertBefore(pb, ref);
+  else ppr.appendChild(pb);
+}
+
 function insererPhotos(
   doc: any,
   zip: any,
@@ -286,6 +312,9 @@ function insererPhotos(
 ): void {
   if (!photos.length) return;
   const ancre = trouver(doc, "photos");
+  // Éviter la bannière « PHOTOS » orpheline en bas de page : la section photos
+  // démarre en haut d'une nouvelle page (bannière + photos toujours ensemble).
+  forcerSautDePageAvant(doc, ancre);
   const nbLignes = Math.ceil(photos.length / PHOTOS_PAR_LIGNE);
 
   const tbl = creer(doc, "w:tbl");
@@ -344,8 +373,17 @@ function insererPhotos(
     }
     tbl.appendChild(tr);
   }
-  // Déplacer le tableau juste après le titre « photos ».
-  ancre.parentNode!.insertBefore(tbl, ancre.nextSibling);
+  // Aérer : petit espace entre la bannière « PHOTOS » et la première rangée de photos
+  // (sinon les images sont collées au titre). Paragraphe fin, gardé avec la suite.
+  const espaceur = creer(doc, "w:p");
+  const espPpr = creer(doc, "w:pPr");
+  espPpr.appendChild(creer(doc, "w:keepNext"));
+  espPpr.appendChild(creer(doc, "w:spacing", { "w:before": "0", "w:after": "120", "w:line": "120", "w:lineRule": "exact" }));
+  espaceur.appendChild(espPpr);
+
+  // Bannière + espaceur + tableau, insérés dans l'ordre juste après l'ancre.
+  ancre.parentNode!.insertBefore(espaceur, ancre.nextSibling);
+  ancre.parentNode!.insertBefore(tbl, espaceur.nextSibling);
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +608,117 @@ function remplirContactsChantier(doc: any, contacts: Chantier["contacts"]): void
 }
 
 // ---------------------------------------------------------------------------
+// Signature de l'agence — repositionnée en bas de la dernière page.
+// Le modèle place le paraphe (image + lignes signataire) AVANT l'ancre « photos ».
+// À la génération, les photos s'insèrent après l'ancre : la signature se retrouve
+// alors au-dessus des photos. On la déplace donc SOUS les photos, tout en la gardant
+// dans le corps (donc au-dessus du pied de page, sans chevauchement).
+// ---------------------------------------------------------------------------
+
+function paragrapheVide(p: El): boolean {
+  return texteDe(p).trim() === "" && tous(p, "w:drawing").length === 0;
+}
+
+function estTexteSignature(p: El): boolean {
+  return /vallée|compagnie des architectes|architecte dplg/i.test(texteDe(p));
+}
+
+// Paragraphe aligné (left/center/right) avec espace optionnel au-dessus.
+// Ordre CT_PPr respecté : <w:spacing> précède <w:jc>.
+function pAligne(doc: any, jc: string, espaceAvant = 0): El {
+  const p = creer(doc, "w:p");
+  const ppr = creer(doc, "w:pPr");
+  if (espaceAvant) {
+    ppr.appendChild(creer(doc, "w:spacing", { "w:before": String(espaceAvant * 20), "w:after": "0" }));
+  }
+  ppr.appendChild(creer(doc, "w:jc", { "w:val": jc }));
+  p.appendChild(ppr);
+  return p;
+}
+
+function runFormate(
+  doc: any,
+  texte: string,
+  o: { gras?: boolean; italique?: boolean; taille?: number },
+): El {
+  const r = creer(doc, "w:r");
+  r.appendChild(faireRPr(doc, o));
+  r.appendChild(runTexte(doc, texte));
+  return r;
+}
+
+function deplacerSignatureEnBas(doc: any): void {
+  const ancre = trouver(doc, "photos");
+  const body = ancre.parentNode as El;
+  const paras = enfants(body, "w:p");
+  const idxAncre = paras.indexOf(ancre);
+  if (idxAncre < 0) return;
+
+  // Paragraphe image de la signature = paragraphe avec <w:drawing> le plus proche
+  // AVANT l'ancre (le logo d'en-tête est bien plus haut, il n'est pas retenu).
+  let idxImg = -1;
+  for (let i = idxAncre - 1; i >= 0; i--) {
+    if (tous(paras[i], "w:drawing").length) {
+      idxImg = i;
+      break;
+    }
+  }
+  if (idxImg < 0) return; // aucune signature dans ce modèle
+
+  const pImg = paras[idxImg];
+  const runImg = enfants(pImg, "w:r").find((r) => tous(r, "w:drawing").length);
+  if (!runImg) return;
+  const runImgClone = runImg.cloneNode(true) as El;
+
+  // Retirer l'ancien bloc : image + éventuelles lignes signataire + espaces adjacents,
+  // sans jamais toucher au contenu réel qui précède (Conclusion / Observations…).
+  const aRetirer: El[] = [pImg];
+  for (let j = idxImg - 1; j >= 0; j--) {
+    if (paragrapheVide(paras[j]) || estTexteSignature(paras[j])) aRetirer.push(paras[j]);
+    else break;
+  }
+  for (let k = idxImg + 1; k < idxAncre; k++) {
+    if (paragrapheVide(paras[k])) aRetirer.push(paras[k]);
+    else break;
+  }
+  for (const p of aRetirer) p.parentNode && p.parentNode.removeChild(p);
+
+  // Point d'insertion : après le tableau photos s'il existe, sinon après l'ancre.
+  // On saute l'éventuel paragraphe espaceur inséré entre la bannière et le tableau.
+  let apres: El = ancre;
+  let sib = ancre.nextSibling as El | null;
+  while (sib) {
+    if (sib.nodeType === 1 && (sib as El).tagName === "w:tbl") {
+      apres = sib;
+      break;
+    }
+    sib = sib.nextSibling as El | null;
+  }
+
+  let cur = apres;
+  const ins = (node: El) => {
+    apres.parentNode!.insertBefore(node, cur.nextSibling);
+    cur = node;
+  };
+
+  // Reconstruire le bloc signature, aligné à droite et abaissé (comme les anciens
+  // rapports) : un espace généreux au-dessus le pousse vers le bas de la page, sans
+  // aller « tout en bas » pour ne pas mordre le pied de page ni créer de page vierge.
+  const l1 = pAligne(doc, "right", 48);
+  l1.appendChild(runFormate(doc, "Laurent de Vallée,", { gras: true, taille: 11 }));
+  l1.appendChild(runFormate(doc, " architecte DPLG", { taille: 11 }));
+  ins(l1);
+
+  const l2 = pAligne(doc, "right");
+  l2.appendChild(runFormate(doc, "Membre de la Compagnie des architectes de copropriété", { taille: 10 }));
+  ins(l2);
+
+  const l3 = pAligne(doc, "right", 4);
+  l3.appendChild(runImgClone);
+  ins(l3);
+}
+
+// ---------------------------------------------------------------------------
 // Point d'entrée
 // ---------------------------------------------------------------------------
 
@@ -613,6 +762,9 @@ export function genererDocx(
 
   // --- Photos ---
   insererPhotos(doc, zip, photos, ajouterMedia);
+
+  // --- Signature en bas de la dernière page (après les photos) ---
+  essayer(() => deplacerSignatureEnBas(doc));
 
   // --- Écriture ---
   ecrireRels();
@@ -662,6 +814,9 @@ export function genererDocxChantier(
 
   // --- Photos ---
   insererPhotos(doc, zip, photos, ajouterMedia);
+
+  // --- Signature en bas de la dernière page (après les photos) ---
+  essayer(() => deplacerSignatureEnBas(doc));
 
   // --- Écriture ---
   ecrireRels();

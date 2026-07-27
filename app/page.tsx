@@ -104,6 +104,8 @@ export default function OutilPage() {
   const [resultat, setResultat] = useState<ResultatGen | null>(null);
   const [modaleImmeuble, setModaleImmeuble] = useState(false);
   const [restaure, setRestaure] = useState(false);
+  const [mondayEtat, setMondayEtat] = useState<"idle" | "chargement" | "ok" | "erreur">("idle");
+  const [mondayMsg, setMondayMsg] = useState<string>("");
 
   // Refs audio (transitoires)
   const mediaRecorder = useRef<MediaRecorder | null>(null);
@@ -139,7 +141,28 @@ export default function OutilPage() {
     const local = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
     if (!window.isSecureContext && !local) setMicroBloque(true);
     setRestaure(true);
+    synchroniserMonday();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---- Synchronisation des immeubles depuis monday.com ---------------------
+  async function synchroniserMonday() {
+    setMondayEtat("chargement");
+    setMondayMsg("");
+    try {
+      const res = await fetch("/api/immeubles", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || "Échec de la synchronisation.");
+      const cs = (data.chantiers || []) as Chantier[];
+      setChantiers(cs);
+      ecrireChantiers(cs); // cache local hors-ligne
+      setMondayEtat("ok");
+      setMondayMsg(`${cs.length} immeuble${cs.length > 1 ? "s" : ""} synchronisé${cs.length > 1 ? "s" : ""} depuis monday`);
+    } catch (e) {
+      setMondayEtat("erreur");
+      setMondayMsg(e instanceof Error ? e.message : "Échec de la synchronisation monday.");
+    }
+  }
 
   // ---- Sauvegarde WIP à chaque changement ----------------------------------
   useEffect(() => {
@@ -502,7 +525,24 @@ export default function OutilPage() {
             {chantierCourant && <span className="ml-auto text-[12.5px] text-faint">Sélectionné</span>}
           </div>
 
-          <label className="block kicker text-muted mb-2" htmlFor="select-chantier">Immeuble</label>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="block kicker text-muted" htmlFor="select-chantier">Immeuble</label>
+            {mondayMsg && (
+              <span
+                className={`ml-auto inline-flex items-center gap-1.5 text-[12px] ${
+                  mondayEtat === "erreur" ? "text-rose-500" : "text-faint"
+                }`}
+                title={mondayMsg}
+              >
+                <span
+                  className={`inline-block w-1.5 h-1.5 rounded-full ${
+                    mondayEtat === "ok" ? "bg-emerald-500" : mondayEtat === "erreur" ? "bg-rose-500" : "bg-amber-400"
+                  }`}
+                />
+                <span className="truncate max-w-[220px]">{mondayMsg}</span>
+              </span>
+            )}
+          </div>
           <div className="flex gap-2.5 flex-col sm:flex-row">
             <div className="select-wrap flex-1">
               <select
@@ -518,6 +558,15 @@ export default function OutilPage() {
                 ))}
               </select>
             </div>
+            <button
+              onClick={synchroniserMonday}
+              disabled={mondayEtat === "chargement"}
+              title="Recharger les immeubles depuis monday.com"
+              className="btn-fant px-4 h-12 text-[14.5px] flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
+            >
+              <svg className={`w-4 h-4 ${mondayEtat === "chargement" ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" /></svg>
+              <span className="hidden sm:inline">Rafraîchir</span>
+            </button>
             <button onClick={() => setModaleImmeuble(true)} className="btn-fant px-4 h-12 text-[14.5px] flex items-center justify-center gap-2 shrink-0">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               Nouvel immeuble
