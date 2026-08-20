@@ -718,6 +718,37 @@ function deplacerSignatureEnBas(doc: any): void {
   ins(l3);
 }
 
+// Supprime les paragraphes vides en toute fin de corps. Le modèle en contient
+// une longue série de remplissage ; une fois les photos et la signature insérées,
+// ces paragraphes débordent et génèrent une page blanche supplémentaire. On les
+// retire, en préservant impérativement les propriétés de section (<w:sectPr>),
+// qu'elles soient un enfant direct du corps ou portées par le dernier paragraphe.
+function supprimerParagraphesVidesEnFin(doc: any): void {
+  const body = tous(doc, "w:body")[0];
+  if (!body) return;
+  let n = body.lastChild as El | null;
+  while (n) {
+    const prec = n.previousSibling as El | null;
+    if (n.nodeType === 1) {
+      const tag = (n as El).tagName;
+      if (tag === "w:sectPr") {
+        n = prec; // section directe : à conserver, on continue vers le haut
+        continue;
+      }
+      if (tag === "w:p") {
+        if (tous(n, "w:sectPr").length) break; // paragraphe portant la section : stop
+        if (paragrapheVide(n)) {
+          body.removeChild(n);
+          n = prec;
+          continue;
+        }
+      }
+      break; // premier bloc réel (image, tableau, texte) : on s'arrête
+    }
+    n = prec;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Point d'entrée
 // ---------------------------------------------------------------------------
@@ -765,6 +796,9 @@ export function genererDocx(
 
   // --- Signature en bas de la dernière page (après les photos) ---
   essayer(() => deplacerSignatureEnBas(doc));
+
+  // --- Nettoyage : plus de page blanche en trop en fin de document ---
+  essayer(() => supprimerParagraphesVidesEnFin(doc));
 
   // --- Écriture ---
   ecrireRels();
@@ -817,6 +851,9 @@ export function genererDocxChantier(
 
   // --- Signature en bas de la dernière page (après les photos) ---
   essayer(() => deplacerSignatureEnBas(doc));
+
+  // --- Nettoyage : plus de page blanche en trop en fin de document ---
+  essayer(() => supprimerParagraphesVidesEnFin(doc));
 
   // --- Écriture ---
   ecrireRels();

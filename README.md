@@ -1,57 +1,118 @@
 # Outil de génération automatique des CR de DIAGNOSTIC (GO Architecture)
 
+Application web (Next.js) qui transforme **une note vocale de visite + des photos + la fiche
+immeuble Monday** en un **compte rendu Word (.docx) prêt à relire**, à l'identique de la
+mise en page de l'agence (logo, cartouche, styles, pagination).
+
 ## Ce que fait l'outil
 
 ```
-Note vocale (2 min)  ──┐
-Fiche chantier Monday ─┼──►  Claude (prompt_diagnostic.md)  ──►  cr_extrait.json
-Photos (Drive/local) ──┘                                              │
-                                                                      ▼
-                                          template/DIAG_MODEL_SDC.docx (intact)
-                                                                      │
-                                                                      ▼
-                                     sortie/CR_DIAG_<IMMEUBLE>_<DATE>.docx
-                                        (page de garde + contacts + généralités
-                                         + observations + conclusion + photos)
-                                                                      │
-                                                                      ▼
-                                              Relecture dans Word → envoi
+Note vocale (micro ou fichier) ──► Groq / Whisper ──► transcription texte
+                                                             │
+Fiche immeuble (Monday) ─────────────────────────┐          │
+Photos (locales, navigateur) ────────┐           ▼          ▼
+                                      │     Google Gemini (prompt_diagnostic.md)
+                                      │                │
+                                      │                ▼  données structurées (JSON)
+                                      │     généralités + observations + conclusion
+                                      │                │
+                                      ▼                ▼
+                          public/DIAG_MODEL_SDC.docx (gabarit intact)
+                                      │  (assemblage dans le navigateur)
+                                      ▼
+                     CR_DIAG_<IMMEUBLE>_<DATE>.docx téléchargé
+             (page de garde + contacts + généralités + observations
+                        + conclusion + photos + signature)
+                                      │
+                                      ▼
+                          Relecture dans Word → envoi
 ```
 
-Le template de l'agence n'est **jamais reconstruit** : il est ouvert, rempli, enregistré
-sous un autre nom. Logo, styles, cartouche de pied de page, pagination : identiques.
+Le template de l'agence n'est **jamais reconstruit** : il est ouvert, rempli, ré-enregistré.
+Logo, styles, cartouche de pied de page, pagination : identiques.
 
-## Installation (Windows)
+Deux types de documents sont gérés (sélectionnables dans l'appli) :
+- **Compte rendu de diagnostic / visite** — `public/DIAG_MODEL_SDC.docx`
+- **Compte rendu de chantier** — `public/CR_CHANTIER_MODEL.docx`
 
-```bat
-python -m pip install python-docx pillow anthropic
-setx ANTHROPIC_API_KEY sk-ant-...
+## Confidentialité (par conception)
+
+- **Les photos ne quittent jamais le navigateur.** Le fichier .docx est assemblé côté client
+  (`lib/docx.ts`). Aucune image n'est envoyée à un service d'IA.
+- Seul **du texte** est transmis à Gemini (transcription + fiche immeuble), jamais de photos.
+- L'audio n'est transmis à Groq que pour la transcription, via un proxy serveur.
+- Les clés d'API restent **côté serveur**, jamais exposées au navigateur.
+
+## Services externes
+
+| Service | Rôle | Où |
+|---|---|---|
+| **Monday.com** (GraphQL) | Liste des immeubles + personnes (nom, rôle, téléphone, email, présence) | `lib/monday.ts`, `app/api/immeubles` |
+| **Groq — Whisper large-v3-turbo** | Transcription de la note vocale (français) | `app/api/transcribe` |
+| **Google Gemini — 2.5 Flash** | Analyse la transcription et rédige le CR structuré | `lib/gemini.ts`, `app/api/extract` |
+
+La mise en page du .docx n'utilise **aucun** service externe (assemblage local avec `pizzip`
++ `@xmldom/xmldom`).
+
+## Installation / lancement en local
+
+Prérequis : Node.js 18+.
+
+```bash
+npm install
+cp .env.example .env.local   # puis renseigner les clés (voir ci-dessous)
+npm run dev                  # http://localhost:3000
 ```
 
-## Utilisation
+Scripts utiles :
 
-```bat
-python run.py --chantier exemples/chantier.json --note note.txt --photos photos --sortie sortie
+```bash
+npm run build        # build de production
+npm run typecheck    # vérification TypeScript
+npm run hash -- "mon-mot-de-passe"   # génère l'empreinte du mot de passe
 ```
 
-Mode relecture / démo (repart d'un JSON déjà extrait, aucun appel API) :
+## Variables d'environnement (`.env.local`)
 
-```bat
-python run.py --chantier exemples/chantier.json --json exemples/cr_extrait.json --photos photos --sortie sortie
-```
+Voir `.env.example` pour le gabarit complet. En résumé :
 
-Le script imprime en fin d'exécution la liste `[A COMPLETER]` : les informations que
-l'architecte n'a pas dictées et qu'il doit vérifier avant envoi.
+| Variable | Rôle |
+|---|---|
+| `GEMINI_API_KEY` | Rédaction du compte rendu (Google Gemini) |
+| `GROQ_API_KEY` | Transcription audio (Groq Whisper) |
+| `MONDAY_API_KEY` | Jeton d'accès personnel Monday |
+| `MONDAY_BOARD_ID` | Identifiant du board des immeubles |
+| `AUTH_EMAIL` | Email du compte unique autorisé |
+| `AUTH_PASSWORD_HASH` | Empreinte scrypt du mot de passe (`npm run hash`) |
+| `SESSION_SECRET` | Clé de signature des sessions (`openssl rand -hex 32`) |
 
-## Les 3 fichiers qui comptent
+`.env.local` est ignoré par git et ne doit **jamais** être commité (il contient des secrets).
+
+## Authentification
+
+- Un seul compte autorisé (`AUTH_EMAIL` + mot de passe).
+- Le mot de passe n'est jamais stocké en clair : seule son empreinte **scrypt** est conservée.
+- Session signée par cookie sécurisé (`jose`), à durée limitée. Voir `lib/session.ts`,
+  `lib/password.ts`, `middleware.ts`.
+
+## Déploiement
+
+Application Next.js déployable sur **Vercel**. Renseigner les mêmes variables dans
+Vercel → Project → Settings → Environment Variables. Contrainte à connaître : les fonctions
+serveur ont une durée max de ~60 s — c'est pourquoi le « raisonnement » de Gemini est
+désactivé (`thinkingBudget: 0`), ce qui accélère et cadre les réponses.
+
+## Les fichiers qui comptent
 
 | Fichier | Rôle |
 |---|---|
-| `prompt_diagnostic.md` | **Le cerveau.** Ton, structure Constat/Analyse/Préconisation, ordre des ouvrages, prudence juridique, volet énergétique. **C'est ici qu'on itère** avec l'architecte : chaque remarque de sa part = une règle ajoutée ici. |
-| `cr_engine.py` | Extraction (appel Claude) + remplissage du .docx + insertion des photos. |
-| `template/DIAG_MODEL_SDC.docx` | Le gabarit de l'agence. Ne pas le modifier sans re-tester. |
+| `prompt_diagnostic.md` | **Le cerveau.** Ton, structure Constat/Analyse/Préconisation, ordre des ouvrages, prudence juridique, volet énergétique. **C'est ici qu'on itère** avec l'architecte : chaque remarque = une règle ajoutée. |
+| `lib/gemini.ts` | Appel Gemini : transcription + fiche → données structurées (JSON). |
+| `lib/docx.ts` | Remplissage du gabarit + insertion des photos + signature, dans le navigateur. |
+| `lib/monday.ts` | Connexion Monday (immeubles + personnes). |
+| `public/DIAG_MODEL_SDC.docx`, `public/CR_CHANTIER_MODEL.docx` | Gabarits de l'agence. Ne pas modifier sans re-tester. |
 
-## Calibrage actuel de la section OBSERVATIONS
+## Calibrage de la section OBSERVATIONS
 
 Chaque désordre est rendu sous la forme :
 
@@ -67,29 +128,17 @@ Ordre de présentation des ouvrages : structure → façades → couverture/zing
 étanchéité/humidité → parties communes → menuiseries → réseaux → sous-sol →
 sécurité/conformité → divers. Seuls les ouvrages réellement évoqués apparaissent.
 
-## Étapes suivantes (dans l'ordre)
-
-1. **Calibrage** — l'architecte lance 3 ou 4 vraies notes vocales, annote le résultat.
-   Chaque correction est traduite en règle dans `prompt_diagnostic.md`. C'est la seule
-   phase qui demande du temps de sa part, et elle est décisive.
-2. **Transcription automatique** — aujourd'hui il dicte dans ChatGPT. Brancher Whisper
-   (`whisper-1`) en amont pour partir directement d'un fichier `.m4a`.
-3. **Connexion Monday** — remplacer `exemples/chantier.json` par un appel à l'API Monday
-   (GraphQL) sur le code immeuble → suppression de toute saisie manuelle.
-4. **Déclencheur** — dépôt de la note vocale + du dossier photos dans un dossier Google
-   Drive nommé au code immeuble ; l'outil surveille le dossier et génère le CR.
-5. **Classement + e-mail** — copie automatique dans `…/copropriété/<nom immeuble>/` sur le
-   PC, et génération d'un brouillon Gmail (entreprises + BET, syndic/MOA en copie),
-   à activer seulement quand la relecture ne révèle plus de correction.
-6. **Réunions de suivi** (2ᵉ type) — même moteur, autre template, avec reprise automatique
-   des points du CR précédent (le `cr_extrait.json` archivé sert d'état antérieur : c'est
-   pour cela que le JSON est conservé à chaque génération).
+Le calibrage est la phase décisive : l'architecte lance quelques vraies notes vocales,
+annote le résultat, et chaque correction est traduite en règle dans `prompt_diagnostic.md`.
 
 ## Limites connues
 
-- Les photos ne sont **pas** légendées automatiquement, sauf si l'architecte annonce le
-  numéro de photo dans sa note vocale. Sans convention orale, elles restent juxtaposées
-  en fin de rapport, comme aujourd'hui. La reconnaissance visuelle automatique des
-  désordres est possible techniquement, mais peu fiable — à ne pas promettre.
-- Les fichiers `.heic` (iPhone) doivent être convertis en `.jpg` en amont
-  (`pillow-heif`), sinon Word ne les affichera pas.
+- L'IA peut mal transcrire un terme technique ou reformuler imparfaitement : **la relecture
+  dans Word reste indispensable** avant envoi. L'outil produit un brouillon fiable, pas un
+  document final validé automatiquement.
+- Les photos ne sont légendées que si l'architecte annonce le numéro de photo dans sa note
+  vocale. La reconnaissance visuelle automatique des désordres est possible techniquement
+  mais peu fiable — à ne pas promettre.
+- Les fichiers `.heic` (iPhone) doivent être convertis en `.jpg` en amont, sinon Word ne
+  les affichera pas.
+- Aujourd'hui : un seul compte, et outil lancé en local pour la démo (déployable en ligne).
