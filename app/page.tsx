@@ -16,6 +16,17 @@ interface ResultatGen {
   blobUrl: string; // URL objet du .docx généré dans le navigateur
   points_a_completer: string[];
 }
+// Étape de correction : l'IA a signalé des points qu'elle n'a pas inventés
+// (non dictés). L'architecte peut les corriger (clavier ou voix) avant génération.
+interface Revision {
+  fiche: Chantier;
+  donnees: DonneesGemini;
+  points: string[];
+  corrections: string[];
+  coches: boolean[];
+}
+// Résultat brut de /api/extract (structure produite par Gemini).
+type DonneesGemini = { points_a_completer?: string[]; [k: string]: unknown };
 
 function dataUrlVersUint8(dataUrl: string): Uint8Array {
   const b64 = dataUrl.split(",")[1] || "";
@@ -102,6 +113,9 @@ export default function OutilPage() {
 
   const [progression, setProgression] = useState<null | Record<string, string>>(null);
   const [resultat, setResultat] = useState<ResultatGen | null>(null);
+  const [revision, setRevision] = useState<Revision | null>(null);
+  const [enregCorr, setEnregCorr] = useState<number | null>(null); // champ correction en cours d'enregistrement
+  const [corrTrans, setCorrTrans] = useState<number | null>(null); // champ correction en cours de transcription
   const [modaleImmeuble, setModaleImmeuble] = useState(false);
   const [restaure, setRestaure] = useState(false);
   const [mondayEtat, setMondayEtat] = useState<"idle" | "chargement" | "ok" | "erreur">("idle");
@@ -117,6 +131,10 @@ export default function OutilPage() {
   const audioCtx = useRef<AudioContext | null>(null);
   const anim = useRef<number | null>(null);
   const ondeRef = useRef<HTMLDivElement | null>(null);
+  // Enregistreur dédié aux corrections (indépendant de la note principale).
+  const corrRecorder = useRef<MediaRecorder | null>(null);
+  const corrChunks = useRef<Blob[]>([]);
+  const corrStream = useRef<MediaStream | null>(null);
 
   // ---- Chargement initial + restauration WIP -------------------------------
   useEffect(() => {
@@ -362,62 +380,169 @@ export default function OutilPage() {
   // ---- Génération ----------------------------------------------------------
   const pret = index !== "" && transcription.trim().length > 0;
 
+  // Construit la fiche chantier courante (avec présences et date à jour).
+  function construireFiche(): Chantier {
+    return {
+      ...chantierCourant!,
+      date_visite: date || aujourdhui(),
+      contacts: (chantierCourant!.contacts || []).map((c, i) => ({ ...c, present: !!presents[i] })),
+    };
+  }
+
+  // Analyse et rédaction (Gemini, côté serveur) — on n'envoie QUE du texte,
+  // jamais les photos : payload minuscule, aucune limite de taille.
+  async function analyser(texte: string, fiche: Chantier): Promise<DonneesGemini> {
+    const r = await fetch("/api/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chantier: fiche, transcription: texte, photoNames: photos.map((p) => p.nom) }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "L'analyse a échoué.");
+    return data.donnees as DonneesGemini;
+  }
+
+  // Mise en page du .docx directement dans le navigateur (photos incluses,
+  // sans jamais quitter le poste), puis affichage de la modale « prêt ».
+  async function construireDoc(donnees: DonneesGemini, fiche: Chantier): Promise<void> {
+    const cfg = TYPES_DOC[docType];
+    setProgression({ transcription: "fait", analyse: "fait", miseenpage: "cours" });
+    const { genererDocx, genererDocxChantier } = await import("@/lib/docx");
+    const tpl = await fetch(cfg.template);
+    const template = new Uint8Array(await tpl.arrayBuffer());
+    const photosDocx = photos.map((p) => ({ data: dataUrlVersUint8(p.dataUrl), legende: p.legende || "" }));
+    const octets =
+      docType === "chantier"
+        ? genererDocxChantier(template, donnees as never, fiche, photosDocx, { numeroReunion, objet })
+        : genererDocx(template, donnees as never, fiche, photosDocx);
+
+    const slug = fiche.sdc.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+    const dateCompacte = (fiche.date_visite || "").replace(/-/g, "");
+    const blob = new Blob([octets as unknown as BlobPart], {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    setProgression({ transcription: "fait", analyse: "fait", miseenpage: "fait", pret: "fait" });
+    await new Promise((res) => setTimeout(res, 350));
+    setProgression(null);
+    setResultat({
+      filename: `${cfg.prefixe}_${slug}_${dateCompacte}.docx`,
+      blobUrl: URL.createObjectURL(blob),
+      points_a_completer: donnees.points_a_completer || [],
+    });
+  }
+
   async function generer() {
     if (!chantierCourant || !docType) return;
-    const cfg = TYPES_DOC[docType];
     setErreur("");
-    const fiche: Chantier = {
-      ...chantierCourant,
-      date_visite: date || aujourdhui(),
-      contacts: (chantierCourant.contacts || []).map((c, i) => ({ ...c, present: !!presents[i] })),
-    };
+    const fiche = construireFiche();
     setProgression({ transcription: "fait", analyse: "cours" });
     try {
-      // 1. Analyse et rédaction (Gemini, côté serveur) — on n'envoie QUE du texte,
-      //    jamais les photos : payload minuscule, aucune limite de taille.
-      const r = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chantier: fiche,
-          transcription,
-          photoNames: photos.map((p) => p.nom),
-        }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || "L'analyse a échoué.");
-      const donnees = data.donnees;
-
-      // 2. Mise en page du .docx directement dans le navigateur (photos incluses,
-      //    sans jamais quitter le poste). Le moteur est chargé à la demande.
-      setProgression({ transcription: "fait", analyse: "fait", miseenpage: "cours" });
-      const { genererDocx, genererDocxChantier } = await import("@/lib/docx");
-      const tpl = await fetch(cfg.template);
-      const template = new Uint8Array(await tpl.arrayBuffer());
-      const photosDocx = photos.map((p) => ({ data: dataUrlVersUint8(p.dataUrl), legende: p.legende || "" }));
-      const octets =
-        docType === "chantier"
-          ? genererDocxChantier(template, donnees, fiche, photosDocx, { numeroReunion, objet })
-          : genererDocx(template, donnees, fiche, photosDocx);
-
-      const slug = fiche.sdc.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
-      const dateCompacte = (fiche.date_visite || "").replace(/-/g, "");
-      const blob = new Blob([octets as unknown as BlobPart], {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
-
-      setProgression({ transcription: "fait", analyse: "fait", miseenpage: "fait", pret: "fait" });
-      await new Promise((res) => setTimeout(res, 350));
-      setProgression(null);
-      setResultat({
-        filename: `${cfg.prefixe}_${slug}_${dateCompacte}.docx`,
-        blobUrl: URL.createObjectURL(blob),
-        points_a_completer: donnees.points_a_completer || [],
-      });
+      const donnees = await analyser(transcription, fiche);
+      // Si l'IA a signalé des points non dictés : étape de correction avant de générer.
+      if (donnees.points_a_completer?.length) {
+        setProgression(null);
+        setRevision({
+          fiche,
+          donnees,
+          points: donnees.points_a_completer,
+          corrections: donnees.points_a_completer.map(() => ""),
+          coches: donnees.points_a_completer.map(() => false),
+        });
+        return;
+      }
+      await construireDoc(donnees, fiche);
     } catch (e) {
       setProgression(null);
       montrerErreur(e instanceof Error ? e.message : "La génération a échoué.");
     }
+  }
+
+  // Valide l'étape de correction : intègre les précisions saisies/dictées à la note
+  // et régénère le compte rendu. Les points laissés vides sont simplement ignorés.
+  async function genererDepuisRevision(): Promise<void> {
+    if (!revision) return;
+    const { fiche, donnees, points, corrections } = revision;
+    const precisions = points
+      .map((p, i) => ({ p, c: corrections[i].trim() }))
+      .filter((x) => x.c.length > 0)
+      .map((x) => `- ${x.p} → ${x.c}`);
+    setRevision(null);
+    try {
+      let donneesFinales = donnees;
+      if (precisions.length) {
+        setProgression({ transcription: "fait", analyse: "cours" });
+        const texte =
+          transcription +
+          "\n\nPRÉCISIONS COMPLÉMENTAIRES DE L'ARCHITECTE (à intégrer au compte rendu) :\n" +
+          precisions.join("\n");
+        donneesFinales = await analyser(texte, fiche);
+      }
+      await construireDoc(donneesFinales, fiche);
+    } catch (e) {
+      setProgression(null);
+      montrerErreur(e instanceof Error ? e.message : "La génération a échoué.");
+    }
+  }
+
+  // Dicte une correction dans le champ `i` (appui = démarrer / arrêter).
+  async function dicterCorrection(i: number): Promise<void> {
+    if (enregCorr === i && corrRecorder.current) {
+      corrRecorder.current.stop();
+      return;
+    }
+    if (enregCorr !== null) return; // un seul enregistrement de correction à la fois
+    if (!navigator.mediaDevices?.getUserMedia) {
+      montrerErreur("Ce navigateur ne permet pas l'enregistrement direct. Tapez la correction au clavier.");
+      return;
+    }
+    try {
+      corrStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      montrerErreur("Le micro n'est pas autorisé. Tapez la correction au clavier.");
+      return;
+    }
+    corrChunks.current = [];
+    const t = typeAudioSupporte();
+    let rec: MediaRecorder;
+    try {
+      rec = t ? new MediaRecorder(corrStream.current, { mimeType: t }) : new MediaRecorder(corrStream.current);
+    } catch {
+      rec = new MediaRecorder(corrStream.current);
+    }
+    corrRecorder.current = rec;
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size) corrChunks.current.push(e.data);
+    };
+    rec.onstop = async () => {
+      corrStream.current?.getTracks().forEach((x) => x.stop());
+      setEnregCorr(null);
+      const type = rec.mimeType || t || "audio/webm";
+      const blob = new Blob(corrChunks.current, { type });
+      setCorrTrans(i);
+      try {
+        const fd = new FormData();
+        fd.append("audio", blob, "corr." + extensionDepuisType(type));
+        const r = await fetch("/api/transcribe", { method: "POST", body: fd });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || "La transcription a échoué.");
+        setRevision((rv) =>
+          rv
+            ? {
+                ...rv,
+                corrections: rv.corrections.map((c, idx) => (idx === i ? (c ? c + " " : "") + data.transcription : c)),
+                coches: rv.coches.map((v, idx) => (idx === i ? true : v)),
+              }
+            : rv,
+        );
+      } catch (e) {
+        montrerErreur(e instanceof Error ? e.message : "La transcription a échoué.");
+      } finally {
+        setCorrTrans(null);
+      }
+    };
+    rec.start();
+    setEnregCorr(i);
   }
 
   function telecharger() {
@@ -430,6 +555,9 @@ export default function OutilPage() {
 
   function nouveau() {
     setResultat(null);
+    setRevision(null);
+    setEnregCorr(null);
+    setCorrTrans(null);
     setTranscription("");
     setPhotos([]);
     setAudioUrl("");
@@ -804,6 +932,89 @@ export default function OutilPage() {
         </div>
       )}
 
+      {/* MODALE CORRECTION — points signalés par l'IA (non dictés) */}
+      {revision && (
+        <div className="fixed inset-0 z-50 modale-fond flex items-center justify-center p-4">
+          <div className="card w-full max-w-lg p-6 sm:p-7 max-h-[90vh] overflow-auto">
+            <div className="flex items-center gap-2.5 mb-2">
+              <svg className="w-7 h-7 text-court" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+              <h3 className="font-display text-[20px] font-semibold">Quelques points à vérifier</h3>
+            </div>
+            <p className="text-[13.5px] text-muted mb-5 leading-relaxed">
+              Ces points n&apos;étaient pas dans votre note vocale. Cochez ceux à corriger, puis ajoutez la précision
+              (au clavier ou à la voix) : elle sera intégrée au compte rendu. Laissez vide pour ignorer.
+            </p>
+            <ul className="space-y-3.5">
+              {revision.points.map((p, i) => {
+                const coche = revision.coches[i];
+                return (
+                  <li key={i} className="rounded-xl border border-line p-3.5">
+                    <label className="flex items-start gap-2.5 cursor-pointer text-[14.5px] leading-snug">
+                      <input
+                        type="checkbox" className="chk mt-0.5 shrink-0"
+                        checked={coche}
+                        onChange={(e) =>
+                          setRevision((rv) =>
+                            rv ? { ...rv, coches: rv.coches.map((v, idx) => (idx === i ? e.target.checked : v)) } : rv,
+                          )
+                        }
+                      />
+                      <span className="font-display font-medium">{p}</span>
+                    </label>
+                    {coche && (
+                      <div className="mt-3 flex items-start gap-2">
+                        <textarea
+                          rows={2}
+                          value={revision.corrections[i]}
+                          onChange={(e) =>
+                            setRevision((rv) =>
+                              rv
+                                ? { ...rv, corrections: rv.corrections.map((c, idx) => (idx === i ? e.target.value : c)) }
+                                : rv,
+                            )
+                          }
+                          className="champ flex-1 py-2.5 text-[14.5px] leading-relaxed resize-y"
+                          placeholder={corrTrans === i ? "Transcription en cours…" : "Précision à apporter…"}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => dicterCorrection(i)}
+                          disabled={(enregCorr !== null && enregCorr !== i) || corrTrans === i}
+                          className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center transition ${
+                            enregCorr === i ? "bg-urgent text-white pulse-rec" : "btn-fant"
+                          } disabled:opacity-40`}
+                          aria-label={enregCorr === i ? "Arrêter la dictée" : "Dicter la correction"}
+                        >
+                          {corrTrans === i ? (
+                            <svg className="w-5 h-5 spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                          ) : enregCorr === i ? (
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
+                          ) : (
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></svg>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="grid sm:grid-cols-2 gap-2.5 mt-6">
+              <button onClick={genererDepuisRevision} className="btn-primaire px-4 py-3 text-[14.5px] flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                {cfg.bouton}
+              </button>
+              <button
+                onClick={() => { const { donnees, fiche } = revision; setRevision(null); construireDoc(donnees, fiche).catch((e) => montrerErreur(e instanceof Error ? e.message : "La génération a échoué.")); }}
+                className="btn-fant px-4 py-3 text-[14.5px] flex items-center justify-center gap-2"
+              >
+                Générer sans corriger
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODALE RÉSULTAT */}
       {resultat && (
         <div className="fixed inset-0 z-50 modale-fond flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setResultat(null); }}>
@@ -818,13 +1029,12 @@ export default function OutilPage() {
                   <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                   À vérifier avant d&apos;envoyer
                 </p>
-                <p className="text-[13px] text-muted mb-3">Ces points n&apos;étaient pas dans votre note. Confirmez-les pendant la relecture.</p>
+                <p className="text-[13px] text-muted mb-3">Ces points n&apos;étaient pas dans votre note. Vérifiez-les dans Word avant l&apos;envoi.</p>
                 <ul className="space-y-2">
                   {resultat.points_a_completer.map((p, i) => (
-                    <li key={i}>
-                      <label className="flex items-start gap-2.5 cursor-pointer text-[14px] leading-snug">
-                        <input type="checkbox" className="chk mt-0.5 shrink-0" /><span>{p}</span>
-                      </label>
+                    <li key={i} className="flex items-start gap-2.5 text-[14px] leading-snug">
+                      <svg className="w-[16px] h-[16px] mt-0.5 shrink-0 text-court" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                      <span>{p}</span>
                     </li>
                   ))}
                 </ul>
