@@ -1,7 +1,7 @@
 # Outil de génération automatique des CR de DIAGNOSTIC (GO Architecture)
 
 Application web (Next.js) qui transforme **une note vocale de visite + des photos + la fiche
-immeuble Monday** en un **compte rendu Word (.docx) prêt à relire**, à l'identique de la
+immeuble** en un **compte rendu Word (.docx) prêt à relire**, à l'identique de la
 mise en page de l'agence (logo, cartouche, styles, pagination).
 
 ## Ce que fait l'outil
@@ -9,7 +9,7 @@ mise en page de l'agence (logo, cartouche, styles, pagination).
 ```
 Note vocale (micro ou fichier) ──► Groq / Whisper ──► transcription texte
                                                              │
-Fiche immeuble (Monday) ─────────────────────────┐          │
+Fiche immeuble (saisie dans l'appli) ────────────┐          │
 Photos (locales, navigateur) ────────┐           ▼          ▼
                                       │     Google Gemini (prompt_diagnostic.md)
                                       │                │
@@ -35,6 +35,18 @@ Deux types de documents sont gérés (sélectionnables dans l'appli) :
 - **Compte rendu de diagnostic / visite** — `public/DIAG_MODEL_SDC.docx`
 - **Compte rendu de chantier** — `public/CR_CHANTIER_MODEL.docx`
 
+## Bibliothèque d'immeubles
+
+Les immeubles sont saisis **directement dans l'outil** (bouton « Nouvel immeuble ») :
+identité de l'immeuble (nom, code, n° d'affaire, adresse, syndic) et participants
+(organisme, nom et qualité, téléphone, e-mail, MOA ou MOE). Chaque fiche peut être
+modifiée ou supprimée depuis l'écran principal, et la présence des participants se
+coche réunion par réunion.
+
+La bibliothèque vit dans le **localStorage du navigateur** (`lib/chantiers.ts`), amorcée
+au premier lancement par `data/chantiers.default.json`. Elle n'est donc pas partagée
+entre appareils : aucune base de données, aucun service externe.
+
 ## Confidentialité (par conception)
 
 - **Les photos ne quittent jamais le navigateur.** Le fichier .docx est assemblé côté client
@@ -47,7 +59,6 @@ Deux types de documents sont gérés (sélectionnables dans l'appli) :
 
 | Service | Rôle | Où |
 |---|---|---|
-| **Monday.com** (GraphQL) | Liste des immeubles + personnes (nom, rôle, téléphone, email, présence) | `lib/monday.ts`, `app/api/immeubles` |
 | **Groq — Whisper large-v3-turbo** | Transcription de la note vocale (français) | `app/api/transcribe` |
 | **Google Gemini — 2.5 Flash** | Analyse la transcription et rédige le CR structuré | `lib/gemini.ts`, `app/api/extract` |
 
@@ -80,8 +91,6 @@ Voir `.env.example` pour le gabarit complet. En résumé :
 |---|---|
 | `GEMINI_API_KEY` | Rédaction du compte rendu (Google Gemini) |
 | `GROQ_API_KEY` | Transcription audio (Groq Whisper) |
-| `MONDAY_API_KEY` | Jeton d'accès personnel Monday |
-| `MONDAY_BOARD_ID` | Identifiant du board des immeubles |
 | `AUTH_EMAIL` | Email du compte unique autorisé |
 | `AUTH_PASSWORD_HASH` | Empreinte scrypt du mot de passe (`npm run hash`) |
 | `SESSION_SECRET` | Clé de signature des sessions (`openssl rand -hex 32`) |
@@ -108,8 +117,7 @@ désactivé (`thinkingBudget: 0`), ce qui accélère et cadre les réponses.
 |---|---|
 | `prompt_diagnostic.md` | **Le cerveau.** Ton, structure Constat/Analyse/Préconisation, ordre des ouvrages, prudence juridique, volet énergétique. **C'est ici qu'on itère** avec l'architecte : chaque remarque = une règle ajoutée. |
 | `lib/gemini.ts` | Appel Gemini : transcription + fiche → données structurées (JSON). |
-| `lib/docx.ts` | Remplissage du gabarit + insertion des photos + signature, dans le navigateur. |
-| `lib/monday.ts` | Connexion Monday (immeubles + personnes). |
+| `lib/docx.ts` | Remplissage du gabarit + insertion des photos + signature, dans le navigateur. Tout le document est en **Century Gothic** ; les photos sont posées **deux par page au maximum** (une seule si la photo est en portrait, elle occupe alors la page entière). |
 | `public/DIAG_MODEL_SDC.docx`, `public/CR_CHANTIER_MODEL.docx` | Gabarits de l'agence. Ne pas modifier sans re-tester. |
 
 ## Calibrage de la section OBSERVATIONS

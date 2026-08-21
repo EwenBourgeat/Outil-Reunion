@@ -1,7 +1,7 @@
 # PROMPT — Extraction structurée d'un compte rendu de DIAGNOSTIC (SDC)
 
 > Ce fichier est le « cerveau » de l'outil. Il est envoyé en `system` à Claude,
-> avec en `user` : la fiche chantier (Monday) + la transcription de la note vocale
+> avec en `user` : la fiche chantier (saisie dans l'outil) + la transcription de la note vocale
 > + la liste des fichiers photos.
 > C'est ICI qu'on itère pour affiner le ton, la structure et la longueur.
 
@@ -162,7 +162,7 @@ Markdown.
 ## USER (gabarit injecté par le script)
 
 ```
-FICHE CHANTIER (source : Monday)
+FICHE CHANTIER
 - SDC / immeuble : {sdc}
 - Adresse : {adresse}
 - Code immeuble : {code_immeuble}

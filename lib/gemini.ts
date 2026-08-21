@@ -18,7 +18,7 @@ export async function extraire(
   const absents = chantier.contacts.filter((c) => !c.present).map(nom).filter(Boolean).join(", ");
   const listePhotos = photos.length ? photos.map((p, i) => `${i + 1}. ${p}`).join("\n") : "(aucune)";
 
-  const user = `FICHE CHANTIER (source : Monday)
+  const user = `FICHE CHANTIER
 - SDC / immeuble : ${chantier.sdc}
 - Adresse : ${chantier.adresse ?? ""}
 - Code immeuble : ${chantier.code_immeuble ?? ""}

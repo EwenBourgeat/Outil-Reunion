@@ -64,7 +64,10 @@ Pour **quitter** : fermez simplement la fenêtre noire.
 
 ## Faire un compte rendu, en trois gestes
 
-1. **Le chantier** — choisissez l'immeuble dans la liste. Décochez les personnes
+1. **Le chantier** — choisissez l'immeuble dans la liste. S'il n'y est pas encore,
+   cliquez sur **« Nouvel immeuble »** et saisissez son identité puis les
+   participants (organisme, nom, téléphone, e-mail) ; les boutons **Modifier** et
+   **Supprimer** permettent d'entretenir la liste ensuite. Décochez les personnes
    absentes. Vérifiez la date.
 2. **La note vocale** — appuyez sur le gros bouton rond pour dicter votre visite,
    ou déposez un fichier audio. Le texte transcrit s'affiche : relisez-le et

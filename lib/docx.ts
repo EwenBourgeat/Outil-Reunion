@@ -11,8 +11,23 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { Chantier, DonneesCR, Observation } from "./types";
 
 const EMU_PAR_CM = 360000;
-const LARGEUR_PHOTO_CM = 8.3;
-const PHOTOS_PAR_LIGNE = 2;
+
+// Police unique de tous les documents produits (modèles de l'agence compris).
+const POLICE = "Century Gothic";
+// Polices « symboles » : elles dessinent les puces et les cases à cocher.
+// Les remplacer casserait les listes, on les laisse donc intactes.
+const POLICES_SYMBOLES = /^(symbol|wingdings|webdings|marlett|courier new)/i;
+
+// Mise en page des photos : au plus DEUX photos par page, et une seule lorsque la
+// photo est haute (portrait) — elle occupe alors toute la page plutôt que d'être
+// réduite à un timbre-poste.
+const PHOTO_LARGEUR_MAX_CM = 16.5; // largeur utile de la page (18 cm) moins une marge
+const PHOTO_HAUTEUR_PAGE_CM = 23.5; // hauteur exploitable, bannière « PHOTOS » déduite
+const PHOTO_LEGENDE_CM = 1.0; // légende + respiration sous l'image
+const PHOTO_SLOTS_PAR_PAGE = 2;
+// Le bloc signature suit les photos : on lui réserve sa hauteur sur la dernière
+// page, faute de quoi il partirait seul sur une page supplémentaire.
+const SIGNATURE_CM = 5.8;
 
 export interface PhotoDocx {
   data: Uint8Array;
@@ -84,7 +99,7 @@ function faireRPr(
   o: { gras?: boolean; italique?: boolean; taille?: number; couleur?: string | null; police?: string },
 ): El {
   const rpr = creer(doc, "w:rPr");
-  rpr.appendChild(creer(doc, "w:rFonts", { "w:ascii": o.police || "Arial", "w:hAnsi": o.police || "Arial" }));
+  rpr.appendChild(creer(doc, "w:rFonts", { "w:ascii": o.police || POLICE, "w:hAnsi": o.police || POLICE }));
   if (o.gras) rpr.appendChild(creer(doc, "w:b"));
   if (o.italique) rpr.appendChild(creer(doc, "w:i"));
   if (o.taille) rpr.appendChild(creer(doc, "w:sz", { "w:val": String(o.taille * 2) }));
@@ -157,7 +172,7 @@ function insererApres(doc: any, par: El, texte = "", opt: OptInser = {}): El {
   return np;
 }
 
-// Écrit dans une cellule de tableau (multi-lignes), police Arial.
+// Écrit dans une cellule de tableau (multi-lignes), dans la police du document.
 function ecrireCellule(
   doc: any,
   cell: El,
@@ -304,86 +319,117 @@ function forcerSautDePageAvant(doc: any, p: El): void {
   else ppr.appendChild(pb);
 }
 
+// Dimensions d'affichage (EMU), proportions conservées, dans la boîte allouée.
+function dimensionsPhoto(w: number, h: number, hauteurMaxCm: number): { cx: number; cy: number } {
+  const echelle = Math.min(PHOTO_LARGEUR_MAX_CM / w, hauteurMaxCm / h);
+  return { cx: Math.round(w * echelle * EMU_PAR_CM), cy: Math.round(h * echelle * EMU_PAR_CM) };
+}
+
+interface PlanPhoto {
+  cx: number;
+  cy: number;
+  nouvellePage: boolean;
+}
+
+// Répartit les photos sur les pages avant toute écriture : chaque page reçoit deux
+// « demi-pages », une photo large ou carrée en occupe une, une photo haute (portrait)
+// les deux — jamais plus de deux photos par page. La hauteur allouée à chaque photo
+// découle de cette répartition, la dernière page cédant sa place au bloc signature.
+function planifierPhotos(photos: PhotoDocx[]): PlanPhoto[] {
+  const tailles = photos.map((ph) => tailleJpeg(ph.data));
+  const slots = tailles.map(({ w, h }) => (h > w ? PHOTO_SLOTS_PAR_PAGE : 1));
+
+  // 1. Page de chaque photo (répartition séquentielle : l'ordre est celui du rapport).
+  const pages: number[] = [];
+  let page = 0;
+  let occupes = 0;
+  slots.forEach((s) => {
+    if (occupes > 0 && occupes + s > PHOTO_SLOTS_PAR_PAGE) {
+      page += 1;
+      occupes = 0;
+    }
+    occupes += s;
+    pages.push(page);
+  });
+
+  // 2. Hauteur allouée, page par page.
+  const dernierePage = page;
+  return tailles.map(({ w, h }, i) => {
+    const hauteurPage = PHOTO_HAUTEUR_PAGE_CM - (pages[i] === dernierePage ? SIGNATURE_CM : 0);
+    // Une photo « pleine page » dispose des deux demi-pages, une photo large d'une seule.
+    const hauteurMax = (hauteurPage * slots[i]) / PHOTO_SLOTS_PAR_PAGE - PHOTO_LEGENDE_CM;
+    return { ...dimensionsPhoto(w, h, hauteurMax), nouvellePage: i > 0 && pages[i] !== pages[i - 1] };
+  });
+}
+
+// Insère les photos sous la bannière « PHOTOS », une par ligne, en pleine largeur.
+// Deux photos par page au maximum ; une seule si la photo est en portrait (elle
+// occupe alors toute la page). Les sauts de page sont explicites : la répartition
+// ne dépend pas de la façon dont Word estime la hauteur des images.
+// Renvoie le dernier paragraphe inséré (point d'ancrage de la signature), ou null.
 function insererPhotos(
   doc: any,
-  zip: any,
   photos: PhotoDocx[],
   ajouterMedia: (data: Uint8Array) => string,
-): void {
-  if (!photos.length) return;
+): El | null {
+  if (!photos.length) return null;
   const ancre = trouver(doc, "photos");
   // Éviter la bannière « PHOTOS » orpheline en bas de page : la section photos
   // démarre en haut d'une nouvelle page (bannière + photos toujours ensemble).
   forcerSautDePageAvant(doc, ancre);
-  const nbLignes = Math.ceil(photos.length / PHOTOS_PAR_LIGNE);
 
-  const tbl = creer(doc, "w:tbl");
-  const tblPr = creer(doc, "w:tblPr");
-  tblPr.appendChild(creer(doc, "w:tblW", { "w:w": "0", "w:type": "auto" }));
-  tblPr.appendChild(creer(doc, "w:jc", { "w:val": "center" }));
-  tbl.appendChild(tblPr);
-  const grid = creer(doc, "w:tblGrid");
-  for (let c = 0; c < PHOTOS_PAR_LIGNE; c++) grid.appendChild(creer(doc, "w:gridCol", { "w:w": "4680" }));
-  tbl.appendChild(grid);
+  // Insertion séquentielle juste après l'ancre, dans l'ordre des photos.
+  let curseur: El = ancre;
+  const inserer = (n: El) => {
+    curseur.parentNode!.insertBefore(n, curseur.nextSibling);
+    curseur = n;
+  };
 
-  let idImg = 1000;
-  for (let ligne = 0; ligne < nbLignes; ligne++) {
-    const tr = creer(doc, "w:tr");
-    for (let col = 0; col < PHOTOS_PAR_LIGNE; col++) {
-      const tc = creer(doc, "w:tc");
-      const tcPr = creer(doc, "w:tcPr");
-      tcPr.appendChild(creer(doc, "w:tcW", { "w:w": "4680", "w:type": "dxa" }));
-      tc.appendChild(tcPr);
-
-      const idx = ligne * PHOTOS_PAR_LIGNE + col;
-      const ph = photos[idx];
-      if (ph) {
-        const { w, h } = tailleJpeg(ph.data);
-        let cx: number, cy: number;
-        if (h > w) {
-          cy = Math.round(LARGEUR_PHOTO_CM * 1.33 * EMU_PAR_CM);
-          cx = Math.round(cy * (w / h));
-        } else {
-          cx = Math.round(LARGEUR_PHOTO_CM * EMU_PAR_CM);
-          cy = Math.round(cx * (h / w));
-        }
-        const rId = ajouterMedia(ph.data);
-
-        const pImg = creer(doc, "w:p");
-        const pprImg = creer(doc, "w:pPr");
-        pprImg.appendChild(creer(doc, "w:jc", { "w:val": "center" }));
-        pImg.appendChild(pprImg);
-        const frag = new DOMParser().parseFromString(drawingXml(rId, idImg++, cx, cy), "text/xml");
-        pImg.appendChild(doc.importNode(frag.documentElement as unknown as El, true));
-        tc.appendChild(pImg);
-
-        const pCap = creer(doc, "w:p");
-        const pprCap = creer(doc, "w:pPr");
-        pprCap.appendChild(creer(doc, "w:jc", { "w:val": "center" }));
-        pCap.appendChild(pprCap);
-        const runCap = creer(doc, "w:r");
-        runCap.appendChild(faireRPr(doc, { taille: 8, italique: true }));
-        runCap.appendChild(runTexte(doc, `Photo n° ${idx + 1}` + (ph.legende ? ` : ${ph.legende}` : "")));
-        pCap.appendChild(runCap);
-        tc.appendChild(pCap);
-      } else {
-        tc.appendChild(creer(doc, "w:p"));
-      }
-      tr.appendChild(tc);
-    }
-    tbl.appendChild(tr);
-  }
-  // Aérer : petit espace entre la bannière « PHOTOS » et la première rangée de photos
-  // (sinon les images sont collées au titre). Paragraphe fin, gardé avec la suite.
+  // Aérer : petit espace entre la bannière « PHOTOS » et la première photo
+  // (sinon l'image est collée au titre). Paragraphe fin, gardé avec la suite.
   const espaceur = creer(doc, "w:p");
   const espPpr = creer(doc, "w:pPr");
   espPpr.appendChild(creer(doc, "w:keepNext"));
   espPpr.appendChild(creer(doc, "w:spacing", { "w:before": "0", "w:after": "120", "w:line": "120", "w:lineRule": "exact" }));
   espaceur.appendChild(espPpr);
+  inserer(espaceur);
 
-  // Bannière + espaceur + tableau, insérés dans l'ordre juste après l'ancre.
-  ancre.parentNode!.insertBefore(espaceur, ancre.nextSibling);
-  ancre.parentNode!.insertBefore(tbl, espaceur.nextSibling);
+  const plan = planifierPhotos(photos);
+  let idImg = 1000;
+
+  photos.forEach((ph, idx) => {
+    const { cx, cy, nouvellePage } = plan[idx];
+    const rId = ajouterMedia(ph.data);
+
+    // --- Paragraphe image : centré, jamais séparé de sa légende ---
+    const pImg = creer(doc, "w:p");
+    const pprImg = creer(doc, "w:pPr");
+    pprImg.appendChild(creer(doc, "w:keepNext"));
+    // Respiration au-dessus de la deuxième photo d'une même page.
+    pprImg.appendChild(
+      creer(doc, "w:spacing", { "w:before": idx > 0 && !nouvellePage ? "240" : "0", "w:after": "0" }),
+    );
+    pprImg.appendChild(creer(doc, "w:jc", { "w:val": "center" }));
+    pImg.appendChild(pprImg);
+    if (nouvellePage) forcerSautDePageAvant(doc, pImg);
+    const frag = new DOMParser().parseFromString(drawingXml(rId, idImg++, cx, cy), "text/xml");
+    pImg.appendChild(doc.importNode(frag.documentElement as unknown as El, true));
+    inserer(pImg);
+
+    // --- Paragraphe légende ---
+    const pCap = creer(doc, "w:p");
+    const pprCap = creer(doc, "w:pPr");
+    pprCap.appendChild(creer(doc, "w:spacing", { "w:before": "60", "w:after": "0" }));
+    pprCap.appendChild(creer(doc, "w:jc", { "w:val": "center" }));
+    pCap.appendChild(pprCap);
+    const runCap = creer(doc, "w:r");
+    runCap.appendChild(faireRPr(doc, { taille: 8, italique: true }));
+    runCap.appendChild(runTexte(doc, `Photo n° ${idx + 1}` + (ph.legende ? ` : ${ph.legende}` : "")));
+    pCap.appendChild(runCap);
+    inserer(pCap);
+  });
+
+  return curseur;
 }
 
 // ---------------------------------------------------------------------------
@@ -624,10 +670,12 @@ function estTexteSignature(p: El): boolean {
 }
 
 // Paragraphe aligné (left/center/right) avec espace optionnel au-dessus.
-// Ordre CT_PPr respecté : <w:spacing> précède <w:jc>.
-function pAligne(doc: any, jc: string, espaceAvant = 0): El {
+// `solidaire` colle le paragraphe au suivant : le bloc signature ne se coupe jamais.
+// Ordre CT_PPr respecté : <w:keepNext>, puis <w:spacing>, puis <w:jc>.
+function pAligne(doc: any, jc: string, espaceAvant = 0, solidaire = false): El {
   const p = creer(doc, "w:p");
   const ppr = creer(doc, "w:pPr");
+  if (solidaire) ppr.appendChild(creer(doc, "w:keepNext"));
   if (espaceAvant) {
     ppr.appendChild(creer(doc, "w:spacing", { "w:before": String(espaceAvant * 20), "w:after": "0" }));
   }
@@ -647,7 +695,7 @@ function runFormate(
   return r;
 }
 
-function deplacerSignatureEnBas(doc: any): void {
+function deplacerSignatureEnBas(doc: any, finPhotos: El | null = null): void {
   const ancre = trouver(doc, "photos");
   const body = ancre.parentNode as El;
   const paras = enfants(body, "w:p");
@@ -683,33 +731,24 @@ function deplacerSignatureEnBas(doc: any): void {
   }
   for (const p of aRetirer) p.parentNode && p.parentNode.removeChild(p);
 
-  // Point d'insertion : après le tableau photos s'il existe, sinon après l'ancre.
-  // On saute l'éventuel paragraphe espaceur inséré entre la bannière et le tableau.
-  let apres: El = ancre;
-  let sib = ancre.nextSibling as El | null;
-  while (sib) {
-    if (sib.nodeType === 1 && (sib as El).tagName === "w:tbl") {
-      apres = sib;
-      break;
-    }
-    sib = sib.nextSibling as El | null;
-  }
-
-  let cur = apres;
+  // Point d'insertion : après la dernière photo si le rapport en comporte,
+  // sinon juste après la bannière « PHOTOS ».
+  let cur: El = finPhotos && finPhotos.parentNode ? finPhotos : ancre;
   const ins = (node: El) => {
-    apres.parentNode!.insertBefore(node, cur.nextSibling);
+    cur.parentNode!.insertBefore(node, cur.nextSibling);
     cur = node;
   };
 
-  // Reconstruire le bloc signature, aligné à droite et abaissé (comme les anciens
-  // rapports) : un espace généreux au-dessus le pousse vers le bas de la page, sans
-  // aller « tout en bas » pour ne pas mordre le pied de page ni créer de page vierge.
-  const l1 = pAligne(doc, "right", 48);
+  // Reconstruire le bloc signature, aligné à droite et détaché du contenu qui précède
+  // (comme les anciens rapports). Sa hauteur est réservée sur la dernière page de photos
+  // (SIGNATURE_CM) et ses lignes sont solidaires : il ne se coupe pas et ne part jamais
+  // seul sur une page blanche.
+  const l1 = pAligne(doc, "right", 24, true);
   l1.appendChild(runFormate(doc, "Laurent de Vallée,", { gras: true, taille: 11 }));
   l1.appendChild(runFormate(doc, " architecte DPLG", { taille: 11 }));
   ins(l1);
 
-  const l2 = pAligne(doc, "right");
+  const l2 = pAligne(doc, "right", 0, true);
   l2.appendChild(runFormate(doc, "Membre de la Compagnie des architectes de copropriété", { taille: 10 }));
   ins(l2);
 
@@ -746,6 +785,32 @@ function supprimerParagraphesVidesEnFin(doc: any): void {
       break; // premier bloc réel (image, tableau, texte) : on s'arrête
     }
     n = prec;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Police du document — Century Gothic partout
+// ---------------------------------------------------------------------------
+
+// Les modèles de l'agence sont déjà en Century Gothic, mais certains styles hérités
+// (Arial, Calibri, Times) subsistent dans styles.xml et referaient surface au fil des
+// mises à jour du modèle. On réécrit donc chaque <w:rFonts> des parties textuelles,
+// en laissant intactes les polices « symboles » (puces, cases à cocher) et
+// numbering.xml, qui ne contient que celles-là.
+function normaliserPolice(zip: any): void {
+  const parties = ["word/styles.xml", "word/document.xml"];
+  for (const nom of Object.keys(zip.files)) {
+    if (/^word\/(header|footer)\d*\.xml$/.test(nom)) parties.push(nom);
+  }
+  for (const nom of parties) {
+    const f = zip.file(nom);
+    if (!f) continue;
+    const xml = f.asText().replace(/<w:rFonts\b[^>]*\/?>/g, (balise: string) =>
+      balise.replace(/(w:(?:ascii|hAnsi))="([^"]*)"/g, (attr: string, cle: string, valeur: string) =>
+        POLICES_SYMBOLES.test(valeur) ? attr : `${cle}="${POLICE}"`,
+      ),
+    );
+    zip.file(nom, xml);
   }
 }
 
@@ -792,10 +857,10 @@ export function genererDocx(
   }
 
   // --- Photos ---
-  insererPhotos(doc, zip, photos, ajouterMedia);
+  const finPhotos = insererPhotos(doc, photos, ajouterMedia);
 
   // --- Signature en bas de la dernière page (après les photos) ---
-  essayer(() => deplacerSignatureEnBas(doc));
+  essayer(() => deplacerSignatureEnBas(doc, finPhotos));
 
   // --- Nettoyage : plus de page blanche en trop en fin de document ---
   essayer(() => supprimerParagraphesVidesEnFin(doc));
@@ -804,6 +869,7 @@ export function genererDocx(
   ecrireRels();
   zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
   remplirCartouche(zip, chantier);
+  normaliserPolice(zip);
 
   return zip.generate({ type: "uint8array", compression: "DEFLATE" });
 }
@@ -847,10 +913,10 @@ export function genererDocxChantier(
   insererObservations(doc, trouver(doc, "OBSERVATIONS"), donnees.observations || []);
 
   // --- Photos ---
-  insererPhotos(doc, zip, photos, ajouterMedia);
+  const finPhotos = insererPhotos(doc, photos, ajouterMedia);
 
   // --- Signature en bas de la dernière page (après les photos) ---
-  essayer(() => deplacerSignatureEnBas(doc));
+  essayer(() => deplacerSignatureEnBas(doc, finPhotos));
 
   // --- Nettoyage : plus de page blanche en trop en fin de document ---
   essayer(() => supprimerParagraphesVidesEnFin(doc));
@@ -859,6 +925,7 @@ export function genererDocxChantier(
   ecrireRels();
   zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
   remplirCartouche(zip, chantier);
+  normaliserPolice(zip);
 
   return zip.generate({ type: "uint8array", compression: "DEFLATE" });
 }

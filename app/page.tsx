@@ -116,10 +116,11 @@ export default function OutilPage() {
   const [revision, setRevision] = useState<Revision | null>(null);
   const [enregCorr, setEnregCorr] = useState<number | null>(null); // champ correction en cours d'enregistrement
   const [corrTrans, setCorrTrans] = useState<number | null>(null); // champ correction en cours de transcription
-  const [modaleImmeuble, setModaleImmeuble] = useState(false);
+  // Modale immeuble : "nouveau" pour une création, l'indice de l'immeuble pour une
+  // modification, null quand elle est fermée.
+  const [modaleImmeuble, setModaleImmeuble] = useState<"nouveau" | number | null>(null);
+  const [confirmeSuppr, setConfirmeSuppr] = useState(false);
   const [restaure, setRestaure] = useState(false);
-  const [mondayEtat, setMondayEtat] = useState<"idle" | "chargement" | "ok" | "erreur">("idle");
-  const [mondayMsg, setMondayMsg] = useState<string>("");
 
   // Refs audio (transitoires)
   const mediaRecorder = useRef<MediaRecorder | null>(null);
@@ -127,6 +128,7 @@ export default function OutilPage() {
   const flux = useRef<MediaStream | null>(null);
   const typeEnreg = useRef<string>("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const debutEnreg = useRef(0); // horodatage du début d'enregistrement
   const secondes = useRef(0);
   const audioCtx = useRef<AudioContext | null>(null);
   const anim = useRef<number | null>(null);
@@ -159,28 +161,16 @@ export default function OutilPage() {
     const local = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
     if (!window.isSecureContext && !local) setMicroBloque(true);
     setRestaure(true);
-    synchroniserMonday();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Synchronisation des immeubles depuis monday.com ---------------------
-  async function synchroniserMonday() {
-    setMondayEtat("chargement");
-    setMondayMsg("");
-    try {
-      const res = await fetch("/api/immeubles", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Échec de la synchronisation.");
-      const cs = (data.chantiers || []) as Chantier[];
-      setChantiers(cs);
-      ecrireChantiers(cs); // cache local hors-ligne
-      setMondayEtat("ok");
-      setMondayMsg(`${cs.length} immeuble${cs.length > 1 ? "s" : ""} synchronisé${cs.length > 1 ? "s" : ""} depuis monday`);
-    } catch (e) {
-      setMondayEtat("erreur");
-      setMondayMsg(e instanceof Error ? e.message : "Échec de la synchronisation monday.");
-    }
-  }
+  // ---- Arrêt des minuteries au démontage ------------------------------------
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearInterval(timer.current);
+      if (anim.current) cancelAnimationFrame(anim.current);
+    };
+  }, []);
 
   // ---- Sauvegarde WIP à chaque changement ----------------------------------
   useEffect(() => {
@@ -259,6 +249,7 @@ export default function OutilPage() {
   }
 
   function finEnreg() {
+    secondes.current = dureeEnreg();
     arreterTimer();
     arreterOnde();
     flux.current?.getTracks().forEach((t) => t.stop());
@@ -274,18 +265,28 @@ export default function OutilPage() {
     transcrire(blob, nom);
   }
 
+  // Le chrono lit la durée à l'horloge plutôt que d'incrémenter un compteur : même si
+  // une minuterie précédente n'avait pas été arrêtée (enregistrement interrompu par le
+  // navigateur, onglet mis en veille), l'affichage reste juste au lieu de s'emballer.
+  function dureeEnreg(): number {
+    return Math.max(0, Math.floor((Date.now() - debutEnreg.current) / 1000));
+  }
+
   function demarrerTimer() {
+    arreterTimer(); // jamais deux minuteries en parallèle
+    debutEnreg.current = Date.now();
     secondes.current = 0;
     setChrono("00:00");
     timer.current = setInterval(() => {
-      secondes.current += 1;
+      secondes.current = dureeEnreg();
       const m = String(Math.floor(secondes.current / 60)).padStart(2, "0");
       const s = String(secondes.current % 60).padStart(2, "0");
       setChrono(`${m}:${s}`);
-    }, 1000);
+    }, 250);
   }
   function arreterTimer() {
     if (timer.current) clearInterval(timer.current);
+    timer.current = null;
   }
 
   function demarrerOnde() {
@@ -574,14 +575,29 @@ export default function OutilPage() {
     window.location.href = "/login";
   }
 
-  // ---- Nouvel immeuble -----------------------------------------------------
-  function enregistrerImmeuble(nouvelImmeuble: Chantier) {
-    const cs = [...chantiers, nouvelImmeuble];
+  // ---- Bibliothèque d'immeubles (saisie et entretien par l'architecte) ------
+  // Création ou modification selon l'origine de la modale.
+  function enregistrerImmeuble(fiche: Chantier) {
+    const modification = typeof modaleImmeuble === "number";
+    const cs = modification
+      ? chantiers.map((c, i) => (i === modaleImmeuble ? fiche : c))
+      : [...chantiers, fiche];
     setChantiers(cs);
     ecrireChantiers(cs);
-    setIndex(String(cs.length - 1));
+    setIndex(String(modification ? modaleImmeuble : cs.length - 1));
+    setPresents({}); // la liste des participants a pu changer
+    setModaleImmeuble(null);
+  }
+
+  function supprimerImmeuble() {
+    if (index === "") return;
+    const i = Number(index);
+    const cs = chantiers.filter((_, j) => j !== i);
+    setChantiers(cs);
+    ecrireChantiers(cs);
+    setIndex("");
     setPresents({});
-    setModaleImmeuble(false);
+    setConfirmeSuppr(false);
   }
 
   if (!restaure) return null;
@@ -602,7 +618,8 @@ export default function OutilPage() {
 
       <header className="border-b border-line/80 bg-surface/70">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-ink text-paper flex items-center justify-center shrink-0">
+          {/* Pastille aux couleurs du document en cours : bleu en visite, orange en chantier. */}
+          <div className="w-9 h-9 rounded-lg bg-accent text-paper flex items-center justify-center shrink-0 transition-colors">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><path d="M9 9v.01" /><path d="M9 12v.01" /><path d="M9 15v.01" />
             </svg>
@@ -650,35 +667,35 @@ export default function OutilPage() {
           <div className="flex items-baseline gap-3 mb-5">
             <span className="kicker text-accent">01</span>
             <h2 className="font-display text-[19px] font-semibold leading-none">Le chantier</h2>
-            {chantierCourant && <span className="ml-auto text-[12.5px] text-faint">Sélectionné</span>}
-          </div>
-
-          <div className="flex items-center gap-2 mb-2">
-            <label className="block kicker text-muted" htmlFor="select-chantier">Immeuble</label>
-            {mondayMsg && (
-              <span
-                className={`ml-auto inline-flex items-center gap-1.5 text-[12px] ${
-                  mondayEtat === "erreur" ? "text-rose-500" : "text-faint"
-                }`}
-                title={mondayMsg}
-              >
-                <span
-                  className={`inline-block w-1.5 h-1.5 rounded-full ${
-                    mondayEtat === "ok" ? "bg-emerald-500" : mondayEtat === "erreur" ? "bg-rose-500" : "bg-amber-400"
-                  }`}
-                />
-                <span className="truncate max-w-[220px]">{mondayMsg}</span>
-              </span>
+            {chantierCourant && (
+              <div className="ml-auto flex items-center gap-3 text-[13px]">
+                <button
+                  onClick={() => setModaleImmeuble(Number(index))}
+                  className="text-muted hover:text-accent-ink font-medium transition"
+                >
+                  Modifier
+                </button>
+                <span className="text-faint" aria-hidden="true">·</span>
+                <button
+                  onClick={() => (confirmeSuppr ? supprimerImmeuble() : setConfirmeSuppr(true))}
+                  onBlur={() => setConfirmeSuppr(false)}
+                  className={`font-medium transition ${confirmeSuppr ? "text-urgent" : "text-muted hover:text-urgent"}`}
+                >
+                  {confirmeSuppr ? "Confirmer la suppression" : "Supprimer"}
+                </button>
+              </div>
             )}
           </div>
+
+          <label className="block kicker text-muted mb-2" htmlFor="select-chantier">Immeuble</label>
           <div className="flex gap-2.5 flex-col sm:flex-row">
             <div className="select-wrap flex-1">
               <select
                 id="select-chantier" value={index}
-                onChange={(e) => { setIndex(e.target.value); setPresents({}); }}
+                onChange={(e) => { setIndex(e.target.value); setPresents({}); setConfirmeSuppr(false); }}
                 className="champ w-full h-12"
               >
-                <option value="">Choisir un immeuble</option>
+                <option value="">{chantiers.length ? "Choisir un immeuble" : "Aucun immeuble : commencez par en créer un"}</option>
                 {chantiers.map((c, i) => (
                   <option key={i} value={i}>
                     {`${c.sdc} — ${c.adresse || ""} ${c.code_immeuble ? "(" + c.code_immeuble + ")" : ""}`.trim()}
@@ -686,16 +703,7 @@ export default function OutilPage() {
                 ))}
               </select>
             </div>
-            <button
-              onClick={synchroniserMonday}
-              disabled={mondayEtat === "chargement"}
-              title="Recharger les immeubles depuis monday.com"
-              className="btn-fant px-4 h-12 text-[14.5px] flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
-            >
-              <svg className={`w-4 h-4 ${mondayEtat === "chargement" ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" /></svg>
-              <span className="hidden sm:inline">Rafraîchir</span>
-            </button>
-            <button onClick={() => setModaleImmeuble(true)} className="btn-fant px-4 h-12 text-[14.5px] flex items-center justify-center gap-2 shrink-0">
+            <button onClick={() => setModaleImmeuble("nouveau")} className="btn-fant px-4 h-12 text-[14.5px] flex items-center justify-center gap-2 shrink-0">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               Nouvel immeuble
             </button>
@@ -1054,29 +1062,50 @@ export default function OutilPage() {
         </div>
       )}
 
-      {modaleImmeuble && <ModaleImmeuble onAnnuler={() => setModaleImmeuble(false)} onEnregistrer={enregistrerImmeuble} onErreur={montrerErreur} />}
+      {modaleImmeuble !== null && (
+        <ModaleImmeuble
+          immeuble={typeof modaleImmeuble === "number" ? chantiers[modaleImmeuble] : undefined}
+          onAnnuler={() => setModaleImmeuble(null)}
+          onEnregistrer={enregistrerImmeuble}
+          onErreur={montrerErreur}
+        />
+      )}
     </>
   );
 }
 
 // ===================================================================
-//  Modale « Nouvel immeuble »
+//  Modale « immeuble » — création et modification d'une fiche complète
+//  (identité de l'immeuble + participants avec coordonnées).
 // ===================================================================
+
+const CONTACT_VIDE: Contact = { groupe: "MOA", organisme: "", nom: "", telephone: "", email: "" };
+
 function ModaleImmeuble({
+  immeuble,
   onAnnuler,
   onEnregistrer,
   onErreur,
 }: {
+  immeuble?: Chantier; // fourni en modification, absent en création
   onAnnuler: () => void;
   onEnregistrer: (c: Chantier) => void;
   onErreur: (m: string) => void;
 }) {
-  const [sdc, setSdc] = useState("");
-  const [code, setCode] = useState("");
-  const [adresse, setAdresse] = useState("");
-  const [affaire, setAffaire] = useState("");
-  const [moa, setMoa] = useState("");
-  const [contacts, setContacts] = useState<Contact[]>([{ groupe: "MOA", organisme: "SYNDIC", nom: "" }]);
+  const modification = !!immeuble;
+  const [sdc, setSdc] = useState(immeuble?.sdc ?? "");
+  const [code, setCode] = useState(immeuble?.code_immeuble ?? "");
+  const [adresse, setAdresse] = useState(immeuble?.adresse ?? "");
+  const [affaire, setAffaire] = useState(immeuble?.n_affaire ?? "");
+  const [moa, setMoa] = useState(immeuble?.moa ?? "");
+  const [contacts, setContacts] = useState<Contact[]>(
+    immeuble?.contacts?.length
+      ? immeuble.contacts.map((c) => ({ ...CONTACT_VIDE, ...c }))
+      : [
+          { ...CONTACT_VIDE, organisme: "SYNDIC" },
+          { ...CONTACT_VIDE, groupe: "MOE", organisme: "GO ARCHITECTURE" },
+        ],
+  );
 
   function majContact(i: number, champ: keyof Contact, valeur: string) {
     setContacts((cs) => cs.map((c, j) => (j === i ? { ...c, [champ]: valeur } : c)));
@@ -1087,19 +1116,42 @@ function ModaleImmeuble({
       onErreur("Le nom de l'immeuble est obligatoire.");
       return;
     }
+    // Une ligne entièrement vide n'est pas un participant : on l'écarte.
     const nettoyes = contacts
-      .map((c) => ({ groupe: c.groupe || "MOA", organisme: c.organisme || "", nom: c.nom || "", telephone: "", email: "" }))
+      .map((c) => ({
+        groupe: (c.groupe || "MOA").toUpperCase(),
+        organisme: (c.organisme || "").trim(),
+        nom: (c.nom || "").trim(),
+        telephone: (c.telephone || "").trim(),
+        email: (c.email || "").trim(),
+        // La présence se coche réunion par réunion, dans l'écran principal.
+        present: c.present ?? true,
+      }))
       .filter((c) => c.organisme || c.nom);
+    if (!nettoyes.length) {
+      onErreur("Renseignez au moins un participant (organisme ou nom).");
+      return;
+    }
     onEnregistrer({
-      sdc: sdc.trim(), adresse: adresse.trim(), code_immeuble: code.trim(),
-      n_affaire: affaire.trim(), moa: moa.trim(), contacts: nettoyes,
+      sdc: sdc.trim(),
+      adresse: adresse.trim(),
+      code_immeuble: code.trim(),
+      n_affaire: affaire.trim(),
+      moa: moa.trim(),
+      contacts: nettoyes,
     });
   }
 
   return (
     <div className="fixed inset-0 z-50 modale-fond flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onAnnuler(); }}>
       <div className="card w-full max-w-lg p-6 sm:p-7 max-h-[90vh] overflow-auto">
-        <h3 className="font-display text-[18px] font-semibold mb-5">Nouvel immeuble</h3>
+        <h3 className="font-display text-[18px] font-semibold mb-1">
+          {modification ? "Modifier l'immeuble" : "Nouvel immeuble"}
+        </h3>
+        <p className="text-[13px] text-muted mb-5 leading-relaxed">
+          Ces informations alimentent la page de garde, le cartouche et le tableau des participants
+          du document. Elles restent enregistrées dans ce navigateur.
+        </p>
         <div className="space-y-3.5">
           <div className="grid sm:grid-cols-2 gap-3.5">
             <div className="sm:col-span-2">
@@ -1125,22 +1177,29 @@ function ModaleImmeuble({
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="kicker text-muted">Contacts</label>
-              <button onClick={() => setContacts((cs) => [...cs, { groupe: "MOA", organisme: "", nom: "" }])} className="text-[13.5px] text-accent hover:text-accent-ink font-medium">+ Ajouter un contact</button>
+              <label className="kicker text-muted">Participants</label>
+              <button onClick={() => setContacts((cs) => [...cs, { ...CONTACT_VIDE }])} className="text-[13.5px] text-accent hover:text-accent-ink font-medium">+ Ajouter un participant</button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {contacts.map((c, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <div className="select-wrap w-[86px] sm:w-28 shrink-0">
-                    <select value={c.groupe} onChange={(e) => majContact(i, "groupe", e.target.value)} className="champ w-full h-11 text-[16px] sm:text-[13.5px]">
-                      <option value="MOA">MOA</option><option value="MOE">MOE</option>
-                    </select>
+                <div key={i} className="rounded-xl border border-line p-2.5 space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <div className="select-wrap w-[86px] sm:w-28 shrink-0">
+                      <select value={c.groupe} onChange={(e) => majContact(i, "groupe", e.target.value)} className="champ w-full h-11 text-[16px] sm:text-[13.5px]">
+                        <option value="MOA">MOA</option><option value="MOE">MOE</option>
+                      </select>
+                    </div>
+                    <input value={c.organisme || ""} onChange={(e) => majContact(i, "organisme", e.target.value)} className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Organisme" />
+                    <input value={c.nom || ""} onChange={(e) => majContact(i, "nom", e.target.value)} className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Nom et qualité" />
+                    <button onClick={() => setContacts((cs) => cs.filter((_, j) => j !== i))} className="shrink-0 w-9 h-11 min-h-0 text-muted hover:text-urgent flex items-center justify-center" aria-label="Retirer le participant">
+                      <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
                   </div>
-                  <input value={c.organisme || ""} onChange={(e) => majContact(i, "organisme", e.target.value)} className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Organisme" />
-                  <input value={c.nom || ""} onChange={(e) => majContact(i, "nom", e.target.value)} className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Nom" />
-                  <button onClick={() => setContacts((cs) => cs.filter((_, j) => j !== i))} className="shrink-0 w-9 h-11 min-h-0 text-muted hover:text-urgent flex items-center justify-center" aria-label="Retirer">
-                    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                  </button>
+                  <div className="flex gap-2">
+                    <input value={c.telephone || ""} onChange={(e) => majContact(i, "telephone", e.target.value)} type="tel" className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="Téléphone" />
+                    <input value={c.email || ""} onChange={(e) => majContact(i, "email", e.target.value)} type="email" className="champ flex-1 min-w-0 h-11 text-[16px] sm:text-[13.5px]" placeholder="E-mail" />
+                    <span className="shrink-0 w-9" aria-hidden="true" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1148,7 +1207,9 @@ function ModaleImmeuble({
         </div>
         <div className="flex gap-2.5 justify-end mt-6">
           <button onClick={onAnnuler} className="btn-fant px-4 py-2.5 text-[14.5px]">Annuler</button>
-          <button onClick={enregistrer} className="btn-primaire px-5 py-2.5 text-[14.5px]">Enregistrer l&apos;immeuble</button>
+          <button onClick={enregistrer} className="btn-primaire px-5 py-2.5 text-[14.5px]">
+            {modification ? "Enregistrer les modifications" : "Enregistrer l'immeuble"}
+          </button>
         </div>
       </div>
     </div>
